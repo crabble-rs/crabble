@@ -1,0 +1,7 @@
+[package]
+name = "logic"
+edition = "2021"
+
+[lib]
+
+[dependencies]
