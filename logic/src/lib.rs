@@ -13,6 +13,13 @@ pub struct BoardLayout {
 }
 
 impl BoardLayout {
+    fn get(&self, index: Coordinate) -> Option<Square> {
+        let x_checked: usize = index.x.try_into().ok()?;
+        let y_checked: usize = index.y.try_into().ok()?;
+        let column = self.squares.get(x_checked)?;
+        column.get(y_checked).cloned()
+    }
+
     fn dimensions(&self) -> (usize, usize) {
         (
             self.squares.len(),
@@ -25,7 +32,10 @@ impl BoardLayout {
 
         for (x, col) in squares.iter_mut().enumerate() {
             for (y, square) in col.iter_mut().enumerate() {
-                *square = f(Coordinate { x, y });
+                *square = f(Coordinate {
+                    x: x as isize,
+                    y: y as isize,
+                });
             }
         }
 
@@ -64,7 +74,12 @@ impl Display for BoardLayout {
         let (x_max, y_max) = self.dimensions();
         for x in 0..x_max {
             for y in 0..y_max {
-                let s = self[Coordinate { x, y }];
+                let s = self
+                    .get(Coordinate {
+                        x: x as isize,
+                        y: y as isize,
+                    })
+                    .unwrap();
                 write!(
                     f,
                     "{}",
@@ -79,14 +94,6 @@ impl Display for BoardLayout {
             writeln!(f)?;
         }
         Ok(())
-    }
-}
-
-impl Index<Coordinate> for BoardLayout {
-    type Output = Square;
-
-    fn index(&self, index: Coordinate) -> &Self::Output {
-        &self.squares[index.x][index.y]
     }
 }
 
@@ -115,11 +122,8 @@ impl Board {
         todo!()
     }
 
-    fn get_square(&self, coord: Coordinate) -> Option<&Square> {
-        let x_checked: usize = coord.x.try_into().ok()?;
-        let y_checked: usize = coord.y.try_into().ok()?;
-        let column: &Vec<Square> = self.squares.get(x_checked)?;
-        column.get(y_checked)
+    fn get_square(&self, coord: Coordinate) -> Option<Square> {
+        self.layout.get(coord)
     }
 
     fn get_tile_mut(&mut self, coord: Coordinate) -> Option<&mut Option<BoardTile>> {
