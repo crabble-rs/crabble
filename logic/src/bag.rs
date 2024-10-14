@@ -3,8 +3,10 @@ use std::fmt::Display;
 
 use crate::HandTile;
 
-static LANGUAGE_DATA: &[(&str, &str)] =
-    &[("english", include_str!("../../data/english/letters.csv"))];
+static LANGUAGE_DATA: &[(&str, &str)] = &[
+    ("english", include_str!("../../data/english/letters.csv")),
+    ("dutch", include_str!("../../data/dutch/letters.csv")),
+];
 
 pub struct Distribution(Vec<(HandTile, usize)>);
 
@@ -111,7 +113,7 @@ impl Bag {
 }
 
 #[test]
-fn test() {
+fn test_english() {
     let distribution = Distribution::for_language("english").unwrap();
     let mut bag = Bag::full(distribution);
 
@@ -123,4 +125,19 @@ fn test() {
     }
 
     assert_eq!(number_of_e, 12);
+}
+
+#[test]
+fn test_dutch() {
+    let distribution = Distribution::for_language("dutch").unwrap();
+    let mut bag = Bag::full(distribution);
+
+    let mut number_of_e = 0;
+    while !bag.is_empty() {
+        if let Some(HandTile::Letter('e')) = bag.take() {
+            number_of_e += 1;
+        }
+    }
+
+    assert_eq!(number_of_e, 18);
 }
