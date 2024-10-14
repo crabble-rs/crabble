@@ -1,7 +1,9 @@
+#![allow(dead_code)]
 use std::ops::{Add, AddAssign, Sub};
 
-struct Board {
-    // the actual squares on the word
+#[derive(Clone)]
+pub struct Board {
+    // the actual squares on the board
     squares: Vec<Vec<Square>>,
     // the played letters
     tiles: Vec<Vec<Option<BoardTile>>>,
@@ -9,6 +11,10 @@ struct Board {
 }
 
 impl Board {
+    pub fn new() -> Board {
+        todo!()
+    }
+
     fn get_square(&self, coord: Coordinate) -> &Square {
         &self.squares[coord.x][coord.y]
     }
@@ -91,6 +97,7 @@ struct Tile {
     is_joker: bool,
 }
 
+#[derive(Copy, Clone)]
 enum HandTile {
     Joker,
     Letter(char),
@@ -100,13 +107,15 @@ struct Hand {
     letters: Vec<HandTile>,
 }
 
-enum Square {
+#[derive(Copy, Clone)]
+pub enum Square {
     Empty,
     LetterMultiplier(i8),
     WordMultiplier(i8),
 }
 
-enum Direction {
+#[derive(Copy, Clone)]
+pub enum Direction {
     Horizontal(usize),
     Vertical(usize),
 }
@@ -154,8 +163,8 @@ fn end_turn(board: &mut Board) -> Result<i32, ()> {
 
     // select direction for gap check
     let offset = match axes {
-        (Some(x), _) => Coordinate { x: 0, y: 1 },
-        (_, Some(y)) => Coordinate { x: 1, y: 0 },
+        (Some(_), _) => Coordinate { x: 0, y: 1 },
+        (_, Some(_)) => Coordinate { x: 1, y: 0 },
         (None, None) => return Err(()),
     };
 
