@@ -7,7 +7,7 @@ mod language;
 use std::fmt::Display;
 use std::ops::{Add, AddAssign, Index, Sub};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct BoardLayout {
     squares: Vec<Vec<Square>>,
 }
@@ -64,13 +64,19 @@ impl Display for BoardLayout {
         let (x_max, y_max) = self.dimensions();
         for x in 0..x_max {
             for y in 0..y_max {
-                let s = self[Coordinate { x, y}];
-                write!(f, "{}", match s {
-                    Square::Empty => '.',
-                    Square::LetterMultiplier(x) => x
-                })
+                let s = self[Coordinate { x, y }];
+                write!(
+                    f,
+                    "{}",
+                    char::from_u32(match s {
+                        Square::Empty => b'.',
+                        Square::LetterMultiplier(x) => x as u8 + b'0',
+                        Square::WordMultiplier(x) => x as u8 + b' ',
+                    } as u32)
+                    .unwrap()
+                )?;
             }
-            writeln!(f);
+            writeln!(f)?;
         }
         Ok(())
     }
@@ -201,7 +207,7 @@ struct Hand {
     letters: Vec<HandTile>,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Square {
     Empty,
     LetterMultiplier(i8),
@@ -329,4 +335,16 @@ fn end_turn(board: &mut Board) -> Result<i32, ()> {
 
 fn check_if_valid(word: impl Iterator<Item = BoardTile>) -> bool {
     true
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{standard_board_layout, BoardLayout};
+
+    #[test]
+    fn test_standard_board_layout() {
+        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+        let s = layout.to_string();
+        assert_eq!(s, include_str!("../../data/scrabble_layout.txt"),);
+    }
 }
