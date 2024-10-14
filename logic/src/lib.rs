@@ -5,7 +5,8 @@ mod game;
 mod language;
 
 use std::fmt::Display;
-use std::ops::{Add, AddAssign, Index, Sub};
+use std::ops::{Add, AddAssign, Sub};
+use std::sync::LazyLock;
 
 #[derive(Clone, Debug)]
 pub struct BoardLayout {
@@ -140,9 +141,7 @@ impl Board {
         *column.get(y_checked)?
     }
 
-    fn tiles_with_coordinates<'a>(
-        &'a self,
-    ) -> impl Iterator<Item = (Coordinate, Option<BoardTile>)> + 'a {
+    fn tiles_with_coordinates(&self) -> impl Iterator<Item = (Coordinate, Option<BoardTile>)> + '_ {
         self.tiles.iter().enumerate().flat_map(|(x, vec)| {
             vec.iter().enumerate().map(move |(y, tile)| {
                 (
@@ -204,13 +203,13 @@ impl Coordinate {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct BoardTile {
     tile: Tile,
     is_provisional: bool,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 struct Tile {
     tile: char,
     is_joker: bool,
@@ -244,6 +243,13 @@ impl Direction {
         match self {
             Self::Horizontal => Coordinate { x: 1, y: 0 },
             Self::Vertical => Coordinate { x: 0, y: 1 },
+        }
+    }
+
+    fn flip(self) -> Direction {
+        match self {
+            Self::Horizontal => Self::Vertical,
+            Self::Vertical => Self::Horizontal,
         }
     }
 }
@@ -298,35 +304,57 @@ fn end_turn(board: &mut Board) -> Result<i32, ()> {
     };
 
     let coords_vec: Vec<Coordinate> = find_range(board, first_coord, dir).collect();
-    let tiles_iter: Vec<BoardTile> = find_range(board, first_coord, dir)
+    let tiles_vec: Vec<BoardTile> = find_range(board, first_coord, dir)
         .map(|coord| board.get_tile(coord).unwrap())
         .collect();
 
     // check that there are no provisional tiles in the board
     // that aren't in this range
+    let all_tiles = board.tiles_with_coordinates();
+    for (_, tile) in all_tiles {
+        let Some(t) = tile else { continue };
 
-    // and check that the range is adjacent to at least one non-provisional tile
+        if t.is_provisional && !tiles_vec.contains(&t) {
+            return Err(());
+        }
+    }
 
-    // check that the word is valid
+    // check if the word we played is valid
 
-    // for each adjacent tile in the other direction check that it's a valid word
+    if !check_if_valid(tiles_vec.into_iter()) {
+        return Err(());
+    }
+
+    // check that there are unprovisional tiles in the range
+    // if not, then check that the range is adjacent to at least one
+    // non-provisional tile
+    if find_range(board, first_coord, dir).fold(true, |acc, coord| {
+        board.get_tile(coord).unwrap().is_provisional && acc
+    }) {
+        let other_dir = dir.flip();
+        let mut is_adjacent = false;
+
+        // for each adjacent tile in the other direction check that it's a valid word
+        for position in coords_vec {
+            let range =
+                find_range(board, position, other_dir).map(|coord| board.get_tile(coord).unwrap());
+            let range_vec: Vec<BoardTile> = range.collect();
+
+            if !range_vec.is_empty() {
+                is_adjacent = true;
+                if !check_if_valid(range_vec.into_iter()) {
+                    return Err(());
+                }
+            }
+        }
+
+        if !is_adjacent {
+            return Err(());
+        }
+    }
 
     todo!()
 }
-
-// while current.x < board.layout.dimensions().0 && current.y < board.layout.dimensions().1 {
-//     if let Some(tile) = board.get_tile(current) {
-//         // return an error
-//         if tile.is_provisional {
-//             return Err(());
-//         }
-//     } else {
-//         // current tile is none, that means that we can continue checking row/column
-//         current = current + dir;
-//     }
-// }
-
-// check_if_valid(current_word);
 
 // given a board, a coordinate, and a direction
 // find the range of the first contiguous chunk of tiles on the board containing coord, in that direction
@@ -369,7 +397,15 @@ fn find_range(
 }
 
 fn check_if_valid(word: impl Iterator<Item = BoardTile>) -> bool {
-    true
+    static WORDS: LazyLock<Vec<&str>> = LazyLock::new(|| {
+        include_str!("../../data/english/words.txt")
+            .lines()
+            .collect()
+    });
+
+    let word: String = word.map(|w| w.tile.tile).collect();
+
+    WORDS.binary_search(&word.as_ref()).is_ok()
 }
 
 #[cfg(test)]
