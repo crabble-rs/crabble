@@ -1,17 +1,107 @@
 #![allow(dead_code)]
 
 mod bag;
+mod game;
 mod language;
 
-use std::ops::{Add, AddAssign, Sub};
+use std::fmt::Display;
+use std::ops::{Add, AddAssign, Index, Sub};
+
+#[derive(Clone)]
+pub struct BoardLayout {
+    squares: Vec<Vec<Square>>,
+}
+
+impl BoardLayout {
+    fn dimensions(&self) -> (usize, usize) {
+        (
+            self.squares.len(),
+            self.squares.first().map_or(0, |v| v.len()),
+        )
+    }
+
+    fn from_fn(dimensions: (usize, usize), f: impl Fn(Coordinate) -> Square) -> Self {
+        let mut squares = vec![vec![Square::Empty; dimensions.1]; dimensions.0];
+
+        for (x, col) in squares.iter_mut().enumerate() {
+            for (y, square) in col.iter_mut().enumerate() {
+                *square = f(Coordinate { x, y });
+            }
+        }
+
+        Self { squares }
+    }
+}
+
+fn standard_board_layout(Coordinate { mut x, mut y }: Coordinate) -> Square {
+    if x % 7 == 0 && y % 7 == 0 {
+        return Square::WordMultiplier(3);
+    }
+    if x > 7 {
+        x = 14 - x;
+    }
+    if y > 7 {
+        y = 14 - y;
+    }
+    if y > x {
+        (x, y) = (y, x)
+    }
+
+    match (x, y) {
+        (3, 0) => Square::LetterMultiplier(2),
+        (5, 1) => Square::LetterMultiplier(3),
+        (6, 2) => Square::LetterMultiplier(2),
+        (7, 3) => Square::LetterMultiplier(2),
+        (6, 6) => Square::LetterMultiplier(2),
+        (5, 5) => Square::LetterMultiplier(3),
+        (x, y) if x == y => Square::WordMultiplier(2),
+        _ => Square::Empty,
+    }
+}
+
+impl Display for BoardLayout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (x_max, y_max) = self.dimensions();
+        for x in 0..x_max {
+            for y in 0..y_max {
+                let s = self[Coordinate { x, y}];
+                write!(f, "{}", match s {
+                    Square::Empty => '.',
+                    Square::LetterMultiplier(x) => x
+                })
+            }
+            writeln!(f);
+        }
+        Ok(())
+    }
+}
+
+impl Index<Coordinate> for BoardLayout {
+    type Output = Square;
+
+    fn index(&self, index: Coordinate) -> &Self::Output {
+        &self.squares[index.x][index.y]
+    }
+}
 
 #[derive(Clone)]
 pub struct Board {
     // the actual squares on the board
-    squares: Vec<Vec<Square>>,
+    layout: BoardLayout,
     // the played letters
     tiles: Vec<Vec<Option<BoardTile>>>,
     provisionary_tiles_count: usize,
+}
+
+impl From<BoardLayout> for Board {
+    fn from(value: BoardLayout) -> Self {
+        let (outer_size, inner_size) = value.dimensions();
+        Self {
+            layout: value,
+            tiles: vec![vec![None; inner_size]; outer_size],
+            provisionary_tiles_count: 0,
+        }
+    }
 }
 
 impl Board {
@@ -20,7 +110,7 @@ impl Board {
     }
 
     fn get_square(&self, coord: Coordinate) -> &Square {
-        &self.squares[coord.x][coord.y]
+        &self.layout[coord]
     }
 
     fn get_tile_mut(&mut self, coord: Coordinate) -> &mut Option<BoardTile> {
@@ -208,7 +298,7 @@ fn end_turn(board: &mut Board) -> Result<i32, ()> {
 
     let range_begin = back;
 
-    while current.x < board.squares.len() && current.y < board.squares[0].len() {
+    while current.x < board.layout.dimensions().0 && current.y < board.layout.dimensions().1 {
         if let Some(tile) = board.get_tile(current) {
             // return an error
             if tile.is_provisional {
