@@ -1,7 +1,7 @@
+use rand::{seq::SliceRandom, thread_rng, Rng};
 use std::fmt::Display;
-use rand::{distributions, seq::SliceRandom, thread_rng, Rng};
 
-use crate::{Hand, HandTile};
+use crate::HandTile;
 
 static LANGUAGE_DATA: &[(&str, &str)] =
     &[("english", include_str!("../../data/english/letters.csv"))];
@@ -10,7 +10,7 @@ pub struct Distribution(Vec<(HandTile, usize)>);
 
 impl Distribution {
     pub fn for_language(lang: &str) -> Result<Self, ()> {
-        let Some((_, data)) = LANGUAGE_DATA.iter().find(|(l, _)| *l == "english") else {
+        let Some((_, data)) = LANGUAGE_DATA.iter().find(|(l, _)| *l == lang) else {
             return Err(());
         };
         Distribution::parse_csv(data)
@@ -97,7 +97,7 @@ impl Bag {
 
     pub fn put(&mut self, tile: HandTile) {
         self.0.push(tile);
-        
+
         let mut rng = thread_rng();
         let idx = rng.gen_range(0..self.0.len());
 
