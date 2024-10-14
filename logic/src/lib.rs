@@ -115,33 +115,48 @@ impl Board {
         todo!()
     }
 
-    fn get_square(&self, coord: Coordinate) -> &Square {
-        &self.layout[coord]
+    fn get_square(&self, coord: Coordinate) -> Option<&Square> {
+        let x_checked: usize = coord.x.try_into().ok()?;
+        let y_checked: usize = coord.y.try_into().ok()?;
+        let column: &Vec<Square> = self.squares.get(x_checked)?;
+        column.get(y_checked)
     }
 
-    fn get_tile_mut(&mut self, coord: Coordinate) -> &mut Option<BoardTile> {
-        &mut self.tiles[coord.x][coord.y]
+    fn get_tile_mut(&mut self, coord: Coordinate) -> Option<&mut Option<BoardTile>> {
+        let x_checked: usize = coord.x.try_into().ok()?;
+        let y_checked: usize = coord.y.try_into().ok()?;
+        let column: &mut Vec<Option<BoardTile>> = self.tiles.get_mut(x_checked)?;
+        column.get_mut(y_checked)
     }
 
     fn get_tile(&self, coord: Coordinate) -> Option<BoardTile> {
-        self.tiles[coord.x][coord.y]
+        let x_checked: usize = coord.x.try_into().ok()?;
+        let y_checked: usize = coord.y.try_into().ok()?;
+        let column: &Vec<Option<BoardTile>> = self.tiles.get(x_checked)?;
+        *column.get(y_checked)?
     }
 
     fn tiles_with_coordinates<'a>(
         &'a self,
     ) -> impl Iterator<Item = (Coordinate, Option<BoardTile>)> + 'a {
         self.tiles.iter().enumerate().flat_map(|(x, vec)| {
-            vec.iter()
-                .enumerate()
-                .map(move |(y, tile)| (Coordinate { x, y }, *tile))
+            vec.iter().enumerate().map(move |(y, tile)| {
+                (
+                    Coordinate {
+                        x: (x as isize),
+                        y: (y as isize),
+                    },
+                    *tile,
+                )
+            })
         })
     }
 }
 
 #[derive(Clone, Copy)]
 struct Coordinate {
-    x: usize,
-    y: usize,
+    x: isize,
+    y: isize,
 }
 
 impl Add for Coordinate {
@@ -223,7 +238,8 @@ pub enum Direction {
 fn place_tile(board: &mut Board, tile: Tile, coord: Coordinate) -> Result<(), ()> {
     // is_provisionary is true
     // we place the tiles on
-    let board_tile = board.get_tile_mut(coord);
+    let board_tile = board.get_tile_mut(coord).ok_or(())?;
+
     match board_tile {
         Some(_) => Err(()),
         None => {
@@ -268,41 +284,10 @@ fn end_turn(board: &mut Board) -> Result<i32, ()> {
         (None, None) => return Err(()),
     };
 
-    let mut current = Coordinate {
-        x: first_coord.x,
-        y: first_coord.y,
-    };
-
-    let mut current_tile = board.get_tile(current);
-
-    while current_tile.is_some() {
-        let next_tile = board.get_tile(current + offset);
-        if next_tile.is_some() {
-            // continue checking contiguous chunk
-            current_tile = next_tile;
-            current = current + offset;
-        } else {
-            break;
-        }
-    }
-
-    let range_end = current.clone();
-
-    let mut back = first_coord.clone();
-    let mut current_tile = board.get_tile(back);
-
-    while back.checked_sub(offset).is_some() && current_tile.is_some() {
-        let next_tile = board.get_tile(back - offset);
-        if next_tile.is_some() {
-            // continue checking contiguous chunk
-            current_tile = next_tile;
-            back = back - offset;
-        } else {
-            break;
-        }
-    }
-
-    let range_begin = back;
+    let coords_vec: Vec<Coordinate> = find_range(board, first_coord, offset).collect();
+    let tiles_iter: Vec<BoardTile> = find_range(board, first_coord, offset)
+        .map(|coord| board.get_tile(coord))
+        .collect();
 
     while current.x < board.layout.dimensions().0 && current.y < board.layout.dimensions().1 {
         if let Some(tile) = board.get_tile(current) {
@@ -316,21 +301,47 @@ fn end_turn(board: &mut Board) -> Result<i32, ()> {
         }
     }
 
-    let mut current_coord = range_begin;
-
-    let current_word = std::iter::from_fn(|| {
-        current_coord += offset;
-
-        if current_coord.x >= range_end.x || current_coord.y >= range_end.y {
-            return None;
-        }
-
-        board.get_tile(current_coord)
-    });
-
     check_if_valid(current_word);
 
     todo!()
+}
+
+// given a board, a coordinate, and a direction
+// find the range of the first contiguous chunk of tiles on the board containing coord, in that direction
+fn find_range(
+    board: &Board,
+    coord: Coordinate,
+    offset: Coordinate,
+) -> impl Iterator<Item = Coordinate> {
+    let mut range_begin = coord.clone();
+    let mut range_end = coord.clone();
+
+    // if we're not at the end of the board, and if we haven't found an empty tile:
+    loop {
+        match board.get_tile(range_end) {
+            Some(_) => range_end = range_end + offset,
+            None => break,
+        }
+    }
+
+    // iterate the other way...
+    loop {
+        match board.get_tile(range_begin) {
+            Some(_) => range_begin = range_begin - offset,
+            None => break,
+        }
+    }
+
+    // create iterator from range
+    let mut current_coord = range_begin;
+    std::iter::from_fn(move || {
+        if current_coord.x >= range_end.x || current_coord.y >= range_end.y {
+            return None;
+        }
+        let res = Some(current_coord);
+        current_coord += offset;
+        res
+    })
 }
 
 fn check_if_valid(word: impl Iterator<Item = BoardTile>) -> bool {
