@@ -100,7 +100,7 @@ struct Tile {
     is_joker: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum HandTile {
     Joker,
     Letter(char),

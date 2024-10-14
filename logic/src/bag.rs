@@ -1,5 +1,5 @@
 use rand::{seq::SliceRandom, thread_rng, Rng};
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::HandTile;
 
@@ -8,18 +8,23 @@ static LANGUAGE_DATA: &[(&str, &str)] = &[
     ("dutch", include_str!("../../data/dutch/letters.csv")),
 ];
 
-pub struct Distribution(Vec<(HandTile, usize)>);
+struct Language {
+    name: String,
+    distribution: Distribution,
+    values: LetterValues,
+}
 
-impl Distribution {
-    pub fn for_language(lang: &str) -> Result<Self, ()> {
+impl Language {
+    pub fn by_name(lang: &str) -> Result<Self, ()> {
         let Some((_, data)) = LANGUAGE_DATA.iter().find(|(l, _)| *l == lang) else {
             return Err(());
         };
-        Distribution::parse_csv(data)
+        Language::parse_csv(lang, data)
     }
 
-    pub fn parse_csv(csv: &str) -> Result<Self, ()> {
+    pub fn parse_csv(name: &str, csv: &str) -> Result<Self, ()> {
         let mut vec = Vec::new();
+        let mut values = HashMap::new();
 
         let mut lines = csv.lines();
         let _ = lines.next();
@@ -32,9 +37,9 @@ impl Distribution {
             let mut parts = line.split(',');
             let letter = parts.next();
             let amount = parts.next();
-            let score = parts.next();
+            let value = parts.next();
 
-            let (Some(letter), Some(amount), Some(_score)) = (letter, amount, score) else {
+            let (Some(letter), Some(amount), Some(value)) = (letter, amount, value) else {
                 return Err(());
             };
 
@@ -50,13 +55,31 @@ impl Distribution {
             };
 
             let amount = amount.parse().map_err(|_| ())?;
+            let value = value.parse().map_err(|_| ())?;
 
             vec.push((tile, amount));
+            values.insert(tile, value);
         }
 
-        Ok(Self(vec))
+        Ok(Language { 
+            name: name.into(),
+            distribution: Distribution(vec),
+            values: LetterValues(values),
+        })
     }
+}
 
+pub struct LetterValues(HashMap<HandTile, usize>);
+
+impl LetterValues {
+    fn get(&self, tile: HandTile) -> usize {
+        self.0[&tile]
+    }
+}
+
+pub struct Distribution(Vec<(HandTile, usize)>);
+
+impl Distribution {
     fn iter(&self) -> impl Iterator<Item = (HandTile, usize)> + '_ {
         self.0.iter().map(|(t, a)| (*t, *a))
     }
@@ -114,8 +137,8 @@ impl Bag {
 
 #[test]
 fn test_english() {
-    let distribution = Distribution::for_language("english").unwrap();
-    let mut bag = Bag::full(distribution);
+    let lang = Language::by_name("english").unwrap();
+    let mut bag = Bag::full(lang.distribution);
 
     let mut number_of_e = 0;
     while !bag.is_empty() {
@@ -125,12 +148,13 @@ fn test_english() {
     }
 
     assert_eq!(number_of_e, 12);
+    assert_eq!(lang.values.get(HandTile::Letter('q')), 10);
 }
 
 #[test]
 fn test_dutch() {
-    let distribution = Distribution::for_language("dutch").unwrap();
-    let mut bag = Bag::full(distribution);
+    let lang = Language::by_name("dutch").unwrap();
+    let mut bag = Bag::full(lang.distribution);
 
     let mut number_of_e = 0;
     while !bag.is_empty() {
@@ -140,4 +164,5 @@ fn test_dutch() {
     }
 
     assert_eq!(number_of_e, 18);
+    assert_eq!(lang.values.get(HandTile::Letter('y')), 8);
 }
