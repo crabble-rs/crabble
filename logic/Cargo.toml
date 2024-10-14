@@ -5,3 +5,4 @@ edition = "2021"
 [lib]
 
 [dependencies]
+rand = "0.8.5"

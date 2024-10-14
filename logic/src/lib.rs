@@ -1,4 +1,7 @@
 #![allow(dead_code)]
+
+mod bag;
+
 use std::ops::{Add, AddAssign, Sub};
 
 #[derive(Clone)]
@@ -97,7 +100,7 @@ struct Tile {
     is_joker: bool,
 }
 
-#[derive(Copy, Clone)]
+#[derive(Clone, Copy, Debug)]
 enum HandTile {
     Joker,
     Letter(char),
