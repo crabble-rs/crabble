@@ -235,8 +235,17 @@ pub enum Square {
 
 #[derive(Copy, Clone)]
 pub enum Direction {
-    Horizontal(usize),
-    Vertical(usize),
+    Horizontal,
+    Vertical,
+}
+
+impl Direction {
+    fn to_offset(self) -> Coordinate {
+        match self {
+            Self::Horizontal => Coordinate { x: 1, y: 0 },
+            Self::Vertical => Coordinate { x: 0, y: 1 },
+        }
+    }
 }
 
 fn place_tile(board: &mut Board, tile: Tile, coord: Coordinate) -> Result<(), ()> {
@@ -282,48 +291,59 @@ fn end_turn(board: &mut Board) -> Result<i32, ()> {
     }
 
     // select direction for gap check
-    let offset = match axes {
-        (Some(_), _) => Coordinate { x: 0, y: 1 },
-        (_, Some(_)) => Coordinate { x: 1, y: 0 },
+    let dir = match axes {
+        (Some(_), _) => Direction::Vertical,
+        (_, Some(_)) => Direction::Horizontal,
         (None, None) => return Err(()),
     };
 
-    let coords_vec: Vec<Coordinate> = find_range(board, first_coord, offset).collect();
-    let tiles_iter: Vec<BoardTile> = find_range(board, first_coord, offset)
-        .map(|coord| board.get_tile(coord))
+    let coords_vec: Vec<Coordinate> = find_range(board, first_coord, dir).collect();
+    let tiles_iter: Vec<BoardTile> = find_range(board, first_coord, dir)
+        .map(|coord| board.get_tile(coord).unwrap())
         .collect();
 
-    while current.x < board.layout.dimensions().0 && current.y < board.layout.dimensions().1 {
-        if let Some(tile) = board.get_tile(current) {
-            // return an error
-            if tile.is_provisional {
-                return Err(());
-            }
-        } else {
-            // current tile is none, that means that we can continue checking row/column
-            current = current + offset;
-        }
-    }
+    // check that there are no provisional tiles in the board
+    // that aren't in this range
 
-    check_if_valid(current_word);
+    // and check that the range is adjacent to at least one non-provisional tile
+
+    // check that the word is valid
+
+    // for each adjacent tile in the other direction check that it's a valid word
 
     todo!()
 }
+
+// while current.x < board.layout.dimensions().0 && current.y < board.layout.dimensions().1 {
+//     if let Some(tile) = board.get_tile(current) {
+//         // return an error
+//         if tile.is_provisional {
+//             return Err(());
+//         }
+//     } else {
+//         // current tile is none, that means that we can continue checking row/column
+//         current = current + dir;
+//     }
+// }
+
+// check_if_valid(current_word);
 
 // given a board, a coordinate, and a direction
 // find the range of the first contiguous chunk of tiles on the board containing coord, in that direction
 fn find_range(
     board: &Board,
     coord: Coordinate,
-    offset: Coordinate,
+    dir: Direction,
 ) -> impl Iterator<Item = Coordinate> {
     let mut range_begin = coord.clone();
     let mut range_end = coord.clone();
 
+    let dir = dir.to_offset();
+
     // if we're not at the end of the board, and if we haven't found an empty tile:
     loop {
         match board.get_tile(range_end) {
-            Some(_) => range_end = range_end + offset,
+            Some(_) => range_end = range_end + dir,
             None => break,
         }
     }
@@ -331,7 +351,7 @@ fn find_range(
     // iterate the other way...
     loop {
         match board.get_tile(range_begin) {
-            Some(_) => range_begin = range_begin - offset,
+            Some(_) => range_begin = range_begin - dir,
             None => break,
         }
     }
@@ -343,7 +363,7 @@ fn find_range(
             return None;
         }
         let res = Some(current_coord);
-        current_coord += offset;
+        current_coord += dir;
         res
     })
 }
