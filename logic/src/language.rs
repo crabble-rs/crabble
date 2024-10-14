@@ -71,7 +71,7 @@ impl Language {
 pub struct LetterValues(HashMap<HandTile, usize>);
 
 impl LetterValues {
-    fn get(&self, tile: HandTile) -> usize {
+    pub fn get(&self, tile: HandTile) -> usize {
         self.0[&tile]
     }
 }
@@ -79,7 +79,7 @@ impl LetterValues {
 pub struct Distribution(Vec<(HandTile, usize)>);
 
 impl Distribution {
-    fn iter(&self) -> impl Iterator<Item = (HandTile, usize)> + '_ {
+    pub fn iter(&self) -> impl Iterator<Item = (HandTile, usize)> + '_ {
         self.0.iter().map(|(t, a)| (*t, *a))
     }
 }
