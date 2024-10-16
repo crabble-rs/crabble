@@ -1,6 +1,9 @@
 use rand::{seq::SliceRandom, thread_rng, Rng};
 
-use crate::{language::{Distribution, Language}, HandTile};
+use crate::{
+    language::{Distribution, Language},
+    HandTile,
+};
 
 pub struct Bag(Vec<HandTile>);
 

@@ -13,6 +13,16 @@ pub struct BoardLayout {
     squares: Vec<Vec<Square>>,
 }
 
+#[derive(Debug)]
+enum WordPlacementError {
+    TileOccupied,
+    PlayedWordEmpty,
+    InvalidDirection,
+    ScatteredProvisionalTile,
+    WordNotAdjacent,
+    TileOutOufBounds,
+}
+
 impl BoardLayout {
     fn get(&self, index: Coordinate) -> Option<Square> {
         let x_checked: usize = index.x.try_into().ok()?;
@@ -86,6 +96,7 @@ impl Display for BoardLayout {
                     "{}",
                     char::from_u32(match s {
                         Square::Empty => b'.',
+                        Square::CenterSquare => b'*',
                         Square::LetterMultiplier(x) => x as u8 + b'0',
                         Square::WordMultiplier(x) => x as u8 + b' ',
                     } as u32)
@@ -123,6 +134,111 @@ impl Board {
         todo!()
     }
 
+    fn place_tile(&mut self, tile: Tile, coord: Coordinate) -> Result<(), WordPlacementError> {
+        // is_provisionary is true
+        // we place the tiles on
+        let board_tile = self
+            .get_tile_mut(coord)
+            .ok_or(WordPlacementError::TileOutOufBounds)?;
+
+        match board_tile {
+            Some(_) => Err(WordPlacementError::TileOccupied),
+            None => {
+                *board_tile = Some(BoardTile {
+                    tile,
+                    is_provisional: true,
+                });
+                self.provisionary_tiles_count += 1;
+                Ok(())
+            }
+        }
+    }
+
+    fn end_turn(&mut self) -> Result<(), WordPlacementError> {
+        let mut tile_iter = self
+            .tiles_with_coordinates()
+            .filter_map(|(coord, tile)| match tile {
+                Some(tile) if tile.is_provisional == true => Some((coord, tile)),
+                _ => None,
+            });
+
+        // check that we have played at least a tile
+        let Some((first_coord, _)) = tile_iter.next() else {
+            return Err(WordPlacementError::PlayedWordEmpty);
+        };
+
+        // check that we have played tiles in a (straight) line
+        let mut axes = (Some(first_coord.x), Some(first_coord.y));
+        for (c, _) in tile_iter {
+            if Some(c.x) != axes.0 {
+                axes.0 = None;
+            }
+            if Some(c.y) != axes.1 {
+                axes.1 = None;
+            }
+        }
+
+        // select direction for gap check
+        let dir = match axes {
+            (Some(_), _) => Direction::Vertical,
+            (_, Some(_)) => Direction::Horizontal,
+            (None, None) => return Err(WordPlacementError::InvalidDirection),
+        };
+
+        dbg!(first_coord);
+        dbg!(&dir);
+
+        let coords_vec: Vec<Coordinate> = find_range(self, first_coord, dir).collect();
+        let tiles_vec: Vec<BoardTile> = find_range(self, first_coord, dir)
+            .map(|coord| self.get_tile(coord).unwrap())
+            .collect();
+
+        // check that there are no provisional tiles in the board
+        // that aren't in this range
+        let all_tiles = self.tiles_with_coordinates();
+        dbg!(&tiles_vec);
+        for (_, tile) in all_tiles {
+            let Some(t) = tile else { continue };
+            dbg!(&tile);
+
+            if t.is_provisional && !tiles_vec.contains(&t) {
+                return Err(WordPlacementError::ScatteredProvisionalTile);
+            }
+        }
+
+        // check that there are unprovisional tiles in the range
+        // if not, then check that the range is adjacent to at least one
+        // non-provisional tile
+        if find_range(self, first_coord, dir)
+            .all(|coord| self.get_tile(coord).unwrap().is_provisional)
+        {
+            let other_dir = dir.flip();
+            let mut is_adjacent = false;
+
+            // for each adjacent tile in the other direction check that it's a valid word
+            for position in coords_vec {
+                let range = find_range(self, position, other_dir)
+                    .map(|coord| self.get_tile(coord).unwrap());
+                let range_vec: Vec<BoardTile> = range.collect();
+
+                if !range_vec.is_empty() {
+                    is_adjacent = true;
+                }
+            }
+
+            if !is_adjacent {
+                if !find_range(self, first_coord, dir).any(|coordinate| {
+                    self.get_square(coordinate)
+                        .unwrap()
+                        .eq(&Square::CenterSquare)
+                }) {
+                    return Err(WordPlacementError::WordNotAdjacent);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn get_square(&self, coord: Coordinate) -> Option<Square> {
         self.layout.get(coord)
     }
@@ -156,7 +272,7 @@ impl Board {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct Coordinate {
     x: isize,
     y: isize,
@@ -203,13 +319,13 @@ impl Coordinate {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 struct BoardTile {
     tile: Tile,
     is_provisional: bool,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 struct Tile {
     tile: char,
     is_joker: bool,
@@ -225,14 +341,15 @@ struct Hand {
     letters: Vec<HandTile>,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Square {
     Empty,
+    CenterSquare,
     LetterMultiplier(i8),
     WordMultiplier(i8),
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum Direction {
     Horizontal,
     Vertical,
@@ -254,106 +371,24 @@ impl Direction {
     }
 }
 
-fn place_tile(board: &mut Board, tile: Tile, coord: Coordinate) -> Result<(), ()> {
-    // is_provisionary is true
-    // we place the tiles on
-    let board_tile = board.get_tile_mut(coord).ok_or(())?;
-
-    match board_tile {
-        Some(_) => Err(()),
-        None => {
-            *board_tile = Some(BoardTile {
-                tile,
-                is_provisional: true,
-            });
-            board.provisionary_tiles_count += 1;
-            Ok(())
-        }
+/// Implements whether a certain play is valid. Returns whether the play is valid.
+fn challenge(
+    board: &Board,
+    word: impl Iterator<Item = Coordinate> + Clone,
+    dir: Direction,
+) -> bool {
+    if !check_if_valid(word.clone().map(|coord| board.get_tile(coord).unwrap())) {
+        return false;
     }
-}
-
-fn end_turn(board: &mut Board) -> Result<i32, ()> {
-    let mut tile_iter = board
-        .tiles_with_coordinates()
-        .filter_map(|(coord, tile)| match tile {
-            Some(tile) if tile.is_provisional == true => Some((coord, tile)),
-            _ => None,
-        });
-
-    // check that we have played at least a tile
-    let Some((first_coord, _)) = tile_iter.next() else {
-        return Err(());
-    };
-
-    // check that we have played tiles in a (straight) line
-    let mut axes = (Some(first_coord.x), Some(first_coord.y));
-    for (c, _) in tile_iter {
-        if Some(c.x) != axes.0 {
-            axes.0 = None;
-        }
-        if Some(c.y) != axes.1 {
-            axes.1 = None;
+    let other_dir = dir.flip();
+    for letter in word {
+        let word = find_range(board, letter, other_dir).map(|coord| board.get_tile(coord).unwrap());
+        if !check_if_valid(word) {
+            return false;
         }
     }
 
-    // select direction for gap check
-    let dir = match axes {
-        (Some(_), _) => Direction::Vertical,
-        (_, Some(_)) => Direction::Horizontal,
-        (None, None) => return Err(()),
-    };
-
-    let coords_vec: Vec<Coordinate> = find_range(board, first_coord, dir).collect();
-    let tiles_vec: Vec<BoardTile> = find_range(board, first_coord, dir)
-        .map(|coord| board.get_tile(coord).unwrap())
-        .collect();
-
-    // check that there are no provisional tiles in the board
-    // that aren't in this range
-    let all_tiles = board.tiles_with_coordinates();
-    for (_, tile) in all_tiles {
-        let Some(t) = tile else { continue };
-
-        if t.is_provisional && !tiles_vec.contains(&t) {
-            return Err(());
-        }
-    }
-
-    // check if the word we played is valid
-
-    if !check_if_valid(tiles_vec.into_iter()) {
-        return Err(());
-    }
-
-    // check that there are unprovisional tiles in the range
-    // if not, then check that the range is adjacent to at least one
-    // non-provisional tile
-    if find_range(board, first_coord, dir).fold(true, |acc, coord| {
-        board.get_tile(coord).unwrap().is_provisional && acc
-    }) {
-        let other_dir = dir.flip();
-        let mut is_adjacent = false;
-
-        // for each adjacent tile in the other direction check that it's a valid word
-        for position in coords_vec {
-            let range =
-                find_range(board, position, other_dir).map(|coord| board.get_tile(coord).unwrap());
-            let range_vec: Vec<BoardTile> = range.collect();
-
-            if !range_vec.is_empty() {
-                is_adjacent = true;
-                if !check_if_valid(range_vec.into_iter()) {
-                    return Err(());
-                }
-            }
-        }
-
-        if !is_adjacent {
-            return Err(());
-        }
-    }
-
-    todo!()
+    true
 }
 
 // given a board, a coordinate, and a direction
@@ -366,33 +401,48 @@ fn find_range(
     let mut range_begin = coord.clone();
     let mut range_end = coord.clone();
 
-    let dir = dir.to_offset();
+    let offset = dir.to_offset();
 
     // if we're not at the end of the board, and if we haven't found an empty tile:
     loop {
         match board.get_tile(range_end) {
-            Some(_) => range_end = range_end + dir,
+            Some(_) => range_end = range_end + offset,
             None => break,
         }
     }
+    dbg!(range_end);
 
     // iterate the other way...
     loop {
         match board.get_tile(range_begin) {
-            Some(_) => range_begin = range_begin - dir,
+            Some(_) => range_begin = range_begin - offset,
             None => break,
         }
     }
 
+    dbg!(range_begin);
+
     // create iterator from range
     let mut current_coord = range_begin;
-    std::iter::from_fn(move || {
-        if current_coord.x >= range_end.x || current_coord.y >= range_end.y {
-            return None;
+    std::iter::from_fn(move || match dir {
+        Direction::Horizontal => {
+            if current_coord.x >= range_end.x {
+                return None;
+            } else {
+                let res = Some(current_coord);
+                current_coord += offset;
+                return res;
+            }
         }
-        let res = Some(current_coord);
-        current_coord += dir;
-        res
+        Direction::Vertical => {
+            if current_coord.y >= range_end.y {
+                return None;
+            } else {
+                let res = Some(current_coord);
+                current_coord += offset;
+                return res;
+            }
+        }
     })
 }
 
@@ -405,17 +455,47 @@ fn check_if_valid(word: impl Iterator<Item = BoardTile>) -> bool {
 
     let word: String = word.map(|w| w.tile.tile).collect();
 
+    if word.is_empty() {
+        return false;
+    }
+
     WORDS.binary_search(&word.as_ref()).is_ok()
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{standard_board_layout, BoardLayout};
+    use super::*;
 
     #[test]
     fn test_standard_board_layout() {
         let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
         let s = layout.to_string();
         assert_eq!(s, include_str!("../../data/scrabble_layout.txt"),);
+    }
+
+    #[test]
+    fn test_any_first_play() {
+        // create default board layout
+        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+        let mut board: Board = layout.into();
+        board
+            .place_tile(
+                Tile {
+                    tile: 'a',
+                    is_joker: false,
+                },
+                Coordinate { x: 7, y: 7 },
+            )
+            .unwrap();
+        board
+            .place_tile(
+                Tile {
+                    tile: 'a',
+                    is_joker: false,
+                },
+                Coordinate { x: 6, y: 7 },
+            )
+            .unwrap();
+        board.end_turn().unwrap();
     }
 }
