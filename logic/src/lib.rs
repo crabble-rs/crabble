@@ -55,6 +55,9 @@ impl BoardLayout {
 }
 
 fn standard_board_layout(Coordinate { mut x, mut y }: Coordinate) -> Square {
+    if x == 7 && y == 7 {
+        return Square::CenterSquare;
+    }
     if x % 7 == 0 && y % 7 == 0 {
         return Square::WordMultiplier(3);
     }
@@ -185,9 +188,6 @@ impl Board {
             (None, None) => return Err(WordPlacementError::InvalidDirection),
         };
 
-        dbg!(first_coord);
-        dbg!(&dir);
-
         let coords_vec: Vec<Coordinate> = find_range(self, first_coord, dir).collect();
         let tiles_vec: Vec<BoardTile> = find_range(self, first_coord, dir)
             .map(|coord| self.get_tile(coord).unwrap())
@@ -196,10 +196,8 @@ impl Board {
         // check that there are no provisional tiles in the board
         // that aren't in this range
         let all_tiles = self.tiles_with_coordinates();
-        dbg!(&tiles_vec);
         for (_, tile) in all_tiles {
             let Some(t) = tile else { continue };
-            dbg!(&tile);
 
             if t.is_provisional && !tiles_vec.contains(&t) {
                 return Err(WordPlacementError::ScatteredProvisionalTile);
@@ -405,28 +403,24 @@ fn find_range(
 
     // if we're not at the end of the board, and if we haven't found an empty tile:
     loop {
-        match board.get_tile(range_end) {
+        match board.get_tile(range_end + offset) {
             Some(_) => range_end = range_end + offset,
             None => break,
         }
     }
-    dbg!(range_end);
 
     // iterate the other way...
     loop {
-        match board.get_tile(range_begin) {
+        match board.get_tile(range_begin - offset) {
             Some(_) => range_begin = range_begin - offset,
             None => break,
         }
     }
 
-    dbg!(range_begin);
-
-    // create iterator from range
     let mut current_coord = range_begin;
     std::iter::from_fn(move || match dir {
         Direction::Horizontal => {
-            if current_coord.x >= range_end.x {
+            if current_coord.x > range_end.x {
                 return None;
             } else {
                 let res = Some(current_coord);
@@ -478,6 +472,7 @@ mod test {
         // create default board layout
         let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
         let mut board: Board = layout.into();
+
         board
             .place_tile(
                 Tile {
@@ -494,6 +489,51 @@ mod test {
                     is_joker: false,
                 },
                 Coordinate { x: 6, y: 7 },
+            )
+            .unwrap();
+        board.end_turn().unwrap();
+    }
+
+    #[test]
+    fn test_word_extension() {
+        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+        let mut board: Board = layout.into();
+
+        board
+            .place_tile(
+                Tile {
+                    tile: 'c',
+                    is_joker: false,
+                },
+                Coordinate { x: 7, y: 7 },
+            )
+            .unwrap();
+        board
+            .place_tile(
+                Tile {
+                    tile: 'a',
+                    is_joker: false,
+                },
+                Coordinate { x: 8, y: 7 },
+            )
+            .unwrap();
+        board
+            .place_tile(
+                Tile {
+                    tile: 't',
+                    is_joker: false,
+                },
+                Coordinate { x: 9, y: 7 },
+            )
+            .unwrap();
+        board.end_turn().unwrap();
+        board
+            .place_tile(
+                Tile {
+                    tile: 's',
+                    is_joker: false,
+                },
+                Coordinate { x: 10, y: 7 },
             )
             .unwrap();
         board.end_turn().unwrap();
