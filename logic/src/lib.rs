@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 
+mod asn;
 mod bag;
 mod game;
 mod language;
@@ -538,4 +539,6 @@ mod test {
             .unwrap();
         board.end_turn().unwrap();
     }
+
+    fn test_vertical() {}
 }
