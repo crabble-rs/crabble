@@ -3,7 +3,7 @@
 
 use std::{io::Read, path::PathBuf, str::FromStr};
 
-use crate::{Coordinate, Direction, Tile};
+use crate::{Coordinate, Direction, Tile, WordPlacementError};
 
 pub struct ASN {
     pub lines: Vec<ASNLine>,
@@ -20,7 +20,7 @@ impl ASN {
         ASN::from_str(&s).unwrap()
     }
 
-    pub fn run(self) -> Result<(), ()> {
+    pub fn run(self, print_board: bool) -> Result<(), WordPlacementError> {
         use super::*;
 
         let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
@@ -28,20 +28,19 @@ impl ASN {
 
         for line in self.lines {
             let mut coord = line.coord;
-            assert!(board.get_tile(coord).is_none());
 
             for tile in line.tiles {
-                board.place_tile(tile, coord).unwrap();
+                board.place_tile(tile, coord)?;
 
                 while board.get_tile(coord).is_some() {
                     coord += line.dir.to_offset();
                 }
             }
-
-            board.end_turn().unwrap();
+            if print_board {
+                println!("{board}");
+            }
+            board.end_turn()?;
         }
-
-        println!("{board}");
 
         Ok(())
     }
@@ -78,6 +77,7 @@ impl FromStr for ASN {
                 }
                 _ => return Err(ASNError::InvalidCoord),
             };
+
             let dir = match chars.next() {
                 Some('v') => Direction::Vertical,
                 Some('h') => Direction::Horizontal,

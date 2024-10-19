@@ -1,4 +1,6 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
+
+use logic::{asn::ASN, WordPlacementError};
 
 fn main() {
     let mut directories = vec![PathBuf::from("./asn_tests")];
@@ -25,7 +27,7 @@ fn main() {
                 println!("gaming!: {:?}", entry.path());
 
                 let asn = logic::asn::ASN::from_file(entry.path());
-                asn.run().unwrap();
+                asn.run(true).unwrap();
             }
         }
     }

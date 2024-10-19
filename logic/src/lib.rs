@@ -14,8 +14,8 @@ pub struct BoardLayout {
     squares: Vec<Vec<Square>>,
 }
 
-#[derive(Debug)]
-enum WordPlacementError {
+#[derive(Debug, PartialEq)]
+pub enum WordPlacementError {
     TileOccupied,
     PlayedWordEmpty,
     InvalidDirection,
@@ -95,6 +95,7 @@ impl Display for BoardLayout {
                         y: y as isize,
                     })
                     .unwrap();
+
                 write!(
                     f,
                     "{}",
@@ -131,7 +132,13 @@ impl Display for Board {
                 });
                 match opt_t {
                     Some(tile) => {
+                        if tile.is_provisional {
+                            write!(f, "\x1b[35m").unwrap();
+                        }
                         write!(f, "{}", tile.tile.tile).unwrap();
+                        if tile.is_provisional {
+                            write!(f, "\x1b[0m").unwrap();
+                        }
                     }
                     None => {
                         write!(
@@ -186,6 +193,7 @@ impl Board {
             .get_tile_mut(coord)
             .ok_or(WordPlacementError::TileOutOufBounds)?;
 
+        dbg!(tile, &board_tile);
         match board_tile {
             Some(_) => Err(WordPlacementError::TileOccupied),
             None => {
@@ -231,17 +239,17 @@ impl Board {
         };
 
         let coords_vec: Vec<Coordinate> = find_range(self, first_coord, dir).collect();
-        let tiles_vec: Vec<BoardTile> = find_range(self, first_coord, dir)
-            .map(|coord| self.get_tile(coord).unwrap())
-            .collect();
 
         // check that there are no provisional tiles in the board
         // that aren't in this range
-        let all_tiles = self.tiles_with_coordinates();
-        for (_, tile) in all_tiles {
-            let Some(t) = tile else { continue };
+        let all_tiles = self
+            .tiles_with_coordinates()
+            .filter(|(_, t)| t.is_some_and(|t| t.is_provisional));
+        for (coord, tile) in all_tiles {
+            if !coords_vec.contains(&coord) {
+                println!("{coord:?}");
+                println!("{tile:?}");
 
-            if t.is_provisional && !tiles_vec.contains(&t) {
                 return Err(WordPlacementError::ScatteredProvisionalTile);
             }
         }
@@ -261,7 +269,7 @@ impl Board {
                     .map(|coord| self.get_tile(coord).unwrap());
                 let range_vec: Vec<BoardTile> = range.collect();
 
-                if !range_vec.is_empty() {
+                if range_vec.len() > 1 {
                     is_adjacent = true;
                 }
             }
@@ -276,6 +284,15 @@ impl Board {
                 }
             }
         }
+
+        for coord in find_range(self, first_coord, dir) {
+            self.get_tile_mut(coord)
+                .unwrap()
+                .as_mut()
+                .unwrap()
+                .is_provisional = false;
+        }
+
         Ok(())
     }
 
@@ -312,7 +329,7 @@ impl Board {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 struct Coordinate {
     x: isize,
     y: isize,
@@ -471,7 +488,7 @@ fn find_range(
             }
         }
         Direction::Vertical => {
-            if current_coord.y >= range_end.y {
+            if current_coord.y > range_end.y {
                 return None;
             } else {
                 let res = Some(current_coord);
@@ -500,6 +517,10 @@ fn check_if_valid(word: impl Iterator<Item = BoardTile>) -> bool {
 
 #[cfg(test)]
 mod test {
+    use std::str::FromStr;
+
+    use asn::ASN;
+
     use super::*;
 
     #[test]
@@ -581,5 +602,29 @@ mod test {
         board.end_turn().unwrap();
     }
 
-    fn test_vertical() {}
+    #[test]
+    fn asn_test_word_extension() {
+        let a = ASN::from_str("88hcat\nb8hs").unwrap();
+        a.run(false).unwrap();
+    }
+
+    #[test]
+    fn asn_invalid_play() {
+        let a = ASN::from_str("77hcat\ne8hs").unwrap();
+        let err = a.run(false).unwrap_err();
+        assert_eq!(err, WordPlacementError::WordNotAdjacent);
+    }
+
+    #[test]
+    fn asn_invalid_play_overlap() {
+        let a = ASN::from_str("77hcat\n97hmeow").unwrap();
+        let err = a.run(false).unwrap_err();
+        assert_eq!(err, WordPlacementError::TileOccupied);
+    }
+
+    #[test]
+    fn asn_catgirl_extension() {
+        let a = ASN::from_str("77hgirl\n47hcats").unwrap();
+        a.run(true).unwrap();
+    }
 }
