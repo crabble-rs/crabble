@@ -2,6 +2,8 @@
 resolver = "2"
 
 members = [
-    "logic"
-, "networking/server"]
+    "logic",
+    "asn_tests_runner",
+    "networking/server",
+]
 

@@ -60,7 +60,7 @@ impl Language {
             values.insert(tile, value);
         }
 
-        Ok(Language { 
+        Ok(Language {
             name: name.into(),
             distribution: Distribution(vec),
             values: LetterValues(values),

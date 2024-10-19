@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-mod asn;
+pub mod asn;
 mod bag;
 mod game;
 mod language;
@@ -106,6 +106,47 @@ impl Display for BoardLayout {
                     } as u32)
                     .unwrap()
                 )?;
+            }
+            writeln!(f)?;
+        }
+        Ok(())
+    }
+}
+
+impl Display for Board {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let (x_max, y_max) = self.layout.dimensions();
+        for y in 0..y_max {
+            for x in 0..x_max {
+                let s = self
+                    .layout
+                    .get(Coordinate {
+                        x: x as isize,
+                        y: y as isize,
+                    })
+                    .unwrap();
+                let opt_t = self.get_tile(Coordinate {
+                    x: x as isize,
+                    y: y as isize,
+                });
+                match opt_t {
+                    Some(tile) => {
+                        write!(f, "{}", tile.tile.tile).unwrap();
+                    }
+                    None => {
+                        write!(
+                            f,
+                            "{}",
+                            char::from_u32(match s {
+                                Square::Empty => b'.',
+                                Square::CenterSquare => b'*',
+                                Square::LetterMultiplier(x) => x as u8 + b'0',
+                                Square::WordMultiplier(x) => x as u8 + b' ',
+                            } as u32)
+                            .unwrap()
+                        )?;
+                    }
+                }
             }
             writeln!(f)?;
         }
