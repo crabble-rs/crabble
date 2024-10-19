@@ -1,9 +1,7 @@
+#[cfg(test)]
+use crate::language::Language;
+use crate::{language::Distribution, HandTile};
 use rand::{seq::SliceRandom, thread_rng, Rng};
-
-use crate::{
-    language::{Distribution, Language},
-    HandTile,
-};
 
 pub struct Bag(Vec<HandTile>);
 

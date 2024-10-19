@@ -330,7 +330,7 @@ impl Board {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Coordinate {
+pub struct Coordinate {
     x: isize,
     y: isize,
 }
@@ -383,7 +383,7 @@ struct BoardTile {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-struct Tile {
+pub struct Tile {
     tile: char,
     is_joker: bool,
 }

@@ -1,6 +1,3 @@
-// Algebraic Scrabble Notation
-// 98hCA*TS
-
 use std::{io::Read, path::PathBuf, str::FromStr};
 
 use crate::{Coordinate, Direction, Tile, WordPlacementError};

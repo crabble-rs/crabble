@@ -1,6 +1,4 @@
-use std::{path::PathBuf, str::FromStr};
-
-use logic::{asn::ASN, WordPlacementError};
+use std::path::PathBuf;
 
 fn main() {
     let mut directories = vec![PathBuf::from("./asn_tests")];
