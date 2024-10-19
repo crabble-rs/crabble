@@ -207,95 +207,6 @@ impl Board {
         }
     }
 
-    fn end_turn(&mut self) -> Result<(), WordPlacementError> {
-        let mut tile_iter = self
-            .tiles_with_coordinates()
-            .filter_map(|(coord, tile)| match tile {
-                Some(tile) if tile.is_provisional == true => Some((coord, tile)),
-                _ => None,
-            });
-
-        // check that we have played at least a tile
-        let Some((first_coord, _)) = tile_iter.next() else {
-            return Err(WordPlacementError::PlayedWordEmpty);
-        };
-
-        // check that we have played tiles in a (straight) line
-        let mut axes = (Some(first_coord.x), Some(first_coord.y));
-        for (c, _) in tile_iter {
-            if Some(c.x) != axes.0 {
-                axes.0 = None;
-            }
-            if Some(c.y) != axes.1 {
-                axes.1 = None;
-            }
-        }
-
-        // select direction for gap check
-        let dir = match axes {
-            (Some(_), _) => Direction::Vertical,
-            (_, Some(_)) => Direction::Horizontal,
-            (None, None) => return Err(WordPlacementError::InvalidDirection),
-        };
-
-        let coords_vec: Vec<Coordinate> = find_range(self, first_coord, dir).collect();
-
-        // check that there are no provisional tiles in the board
-        // that aren't in this range
-        let all_tiles = self
-            .tiles_with_coordinates()
-            .filter(|(_, t)| t.is_some_and(|t| t.is_provisional));
-        for (coord, tile) in all_tiles {
-            if !coords_vec.contains(&coord) {
-                println!("{coord:?}");
-                println!("{tile:?}");
-
-                return Err(WordPlacementError::ScatteredProvisionalTile);
-            }
-        }
-
-        // check that there are unprovisional tiles in the range
-        // if not, then check that the range is adjacent to at least one
-        // non-provisional tile
-        if find_range(self, first_coord, dir)
-            .all(|coord| self.get_tile(coord).unwrap().is_provisional)
-        {
-            let other_dir = dir.flip();
-            let mut is_adjacent = false;
-
-            // for each adjacent tile in the other direction check that it's a valid word
-            for position in coords_vec {
-                let range = find_range(self, position, other_dir)
-                    .map(|coord| self.get_tile(coord).unwrap());
-                let range_vec: Vec<BoardTile> = range.collect();
-
-                if range_vec.len() > 1 {
-                    is_adjacent = true;
-                }
-            }
-
-            if !is_adjacent {
-                if !find_range(self, first_coord, dir).any(|coordinate| {
-                    self.get_square(coordinate)
-                        .unwrap()
-                        .eq(&Square::CenterSquare)
-                }) {
-                    return Err(WordPlacementError::WordNotAdjacent);
-                }
-            }
-        }
-
-        for coord in find_range(self, first_coord, dir) {
-            self.get_tile_mut(coord)
-                .unwrap()
-                .as_mut()
-                .unwrap()
-                .is_provisional = false;
-        }
-
-        Ok(())
-    }
-
     fn get_square(&self, coord: Coordinate) -> Option<Square> {
         self.layout.get(coord)
     }
@@ -325,6 +236,57 @@ impl Board {
                     *tile,
                 )
             })
+        })
+    }
+
+    // given a board, a coordinate, and a direction
+    // find the range of the first contiguous chunk of tiles on the board containing coord, in that direction
+    pub fn find_range(
+        &self,
+        coord: Coordinate,
+        dir: Direction,
+    ) -> impl Iterator<Item = Coordinate> {
+        let mut range_begin = coord.clone();
+        let mut range_end = coord.clone();
+
+        let offset = dir.to_offset();
+
+        // if we're not at the end of the board, and if we haven't found an empty tile:
+        loop {
+            match self.get_tile(range_end + offset) {
+                Some(_) => range_end = range_end + offset,
+                None => break,
+            }
+        }
+
+        // iterate the other way...
+        loop {
+            match self.get_tile(range_begin - offset) {
+                Some(_) => range_begin = range_begin - offset,
+                None => break,
+            }
+        }
+
+        let mut current_coord = range_begin;
+        std::iter::from_fn(move || match dir {
+            Direction::Horizontal => {
+                if current_coord.x > range_end.x {
+                    return None;
+                } else {
+                    let res = Some(current_coord);
+                    current_coord += offset;
+                    return res;
+                }
+            }
+            Direction::Vertical => {
+                if current_coord.y > range_end.y {
+                    return None;
+                } else {
+                    let res = Some(current_coord);
+                    current_coord += offset;
+                    return res;
+                }
+            }
         })
     }
 }
@@ -394,8 +356,40 @@ enum HandTile {
     Letter(char),
 }
 
+impl Display for HandTile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ch = match self {
+            Self::Joker => '*',
+            Self::Letter(l) => *l,
+        };
+
+        write!(f, "{ch}")
+    }
+}
+
 struct Hand {
     letters: Vec<HandTile>,
+}
+
+impl Display for Hand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let hand = self
+            .letters
+            .iter()
+            .map(|el| el.to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        write!(f, "{}", hand)
+    }
+}
+
+impl Hand {
+    pub fn empty() -> Self {
+        Hand {
+            letters: Vec::new(),
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -439,64 +433,15 @@ fn challenge(
     }
     let other_dir = dir.flip();
     for letter in word {
-        let word = find_range(board, letter, other_dir).map(|coord| board.get_tile(coord).unwrap());
+        let word = board
+            .find_range(letter, other_dir)
+            .map(|coord| board.get_tile(coord).unwrap());
         if !check_if_valid(word) {
             return false;
         }
     }
 
     true
-}
-
-// given a board, a coordinate, and a direction
-// find the range of the first contiguous chunk of tiles on the board containing coord, in that direction
-fn find_range(
-    board: &Board,
-    coord: Coordinate,
-    dir: Direction,
-) -> impl Iterator<Item = Coordinate> {
-    let mut range_begin = coord.clone();
-    let mut range_end = coord.clone();
-
-    let offset = dir.to_offset();
-
-    // if we're not at the end of the board, and if we haven't found an empty tile:
-    loop {
-        match board.get_tile(range_end + offset) {
-            Some(_) => range_end = range_end + offset,
-            None => break,
-        }
-    }
-
-    // iterate the other way...
-    loop {
-        match board.get_tile(range_begin - offset) {
-            Some(_) => range_begin = range_begin - offset,
-            None => break,
-        }
-    }
-
-    let mut current_coord = range_begin;
-    std::iter::from_fn(move || match dir {
-        Direction::Horizontal => {
-            if current_coord.x > range_end.x {
-                return None;
-            } else {
-                let res = Some(current_coord);
-                current_coord += offset;
-                return res;
-            }
-        }
-        Direction::Vertical => {
-            if current_coord.y > range_end.y {
-                return None;
-            } else {
-                let res = Some(current_coord);
-                current_coord += offset;
-                return res;
-            }
-        }
-    })
 }
 
 fn check_if_valid(word: impl Iterator<Item = BoardTile>) -> bool {
