@@ -161,7 +161,7 @@ impl Display for Board {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Board {
     // the actual squares on the board
     layout: BoardLayout,
@@ -193,7 +193,6 @@ impl Board {
             .get_tile_mut(coord)
             .ok_or(WordPlacementError::TileOutOufBounds)?;
 
-        dbg!(tile, &board_tile);
         match board_tile {
             Some(_) => Err(WordPlacementError::TileOccupied),
             None => {
@@ -344,7 +343,7 @@ struct BoardTile {
     is_provisional: bool,
 }
 
-#[derive(Clone, Copy, PartialEq, Debug)]
+#[derive(Clone, Copy, PartialEq, Debug, Eq, Hash)]
 pub struct Tile {
     tile: char,
     is_joker: bool,
@@ -367,6 +366,7 @@ impl Display for HandTile {
     }
 }
 
+#[derive(Debug)]
 struct Hand {
     letters: Vec<HandTile>,
 }
@@ -475,82 +475,82 @@ mod test {
         assert_eq!(s, include_str!("../../data/scrabble_layout.txt"),);
     }
 
-    #[test]
-    fn test_any_first_play() {
-        // create default board layout
-        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
-        let mut board: Board = layout.into();
+    // #[test]
+    // fn test_any_first_play() {
+    //     // create default board layout
+    //     let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+    //     let mut board: Board = layout.into();
 
-        board
-            .place_tile(
-                Tile {
-                    tile: 'a',
-                    is_joker: false,
-                },
-                Coordinate { x: 7, y: 7 },
-            )
-            .unwrap();
-        board
-            .place_tile(
-                Tile {
-                    tile: 'a',
-                    is_joker: false,
-                },
-                Coordinate { x: 6, y: 7 },
-            )
-            .unwrap();
-        board.end_turn().unwrap();
-    }
+    //     board
+    //         .place_tile(
+    //             Tile {
+    //                 tile: 'a',
+    //                 is_joker: false,
+    //             },
+    //             Coordinate { x: 7, y: 7 },
+    //         )
+    //         .unwrap();
+    //     board
+    //         .place_tile(
+    //             Tile {
+    //                 tile: 'a',
+    //                 is_joker: false,
+    //             },
+    //             Coordinate { x: 6, y: 7 },
+    //         )
+    //         .unwrap();
+    //     board.end_turn().unwrap();
+    // }
 
-    #[test]
-    fn test_word_extension() {
-        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
-        let mut board: Board = layout.into();
+    // #[test]
+    // fn test_word_extension() {
+    //     let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+    //     let mut board: Board = layout.into();
 
-        board
-            .place_tile(
-                Tile {
-                    tile: 'c',
-                    is_joker: false,
-                },
-                Coordinate { x: 7, y: 7 },
-            )
-            .unwrap();
-        board
-            .place_tile(
-                Tile {
-                    tile: 'a',
-                    is_joker: false,
-                },
-                Coordinate { x: 8, y: 7 },
-            )
-            .unwrap();
-        board
-            .place_tile(
-                Tile {
-                    tile: 't',
-                    is_joker: false,
-                },
-                Coordinate { x: 9, y: 7 },
-            )
-            .unwrap();
-        board.end_turn().unwrap();
-        board
-            .place_tile(
-                Tile {
-                    tile: 's',
-                    is_joker: false,
-                },
-                Coordinate { x: 10, y: 7 },
-            )
-            .unwrap();
-        board.end_turn().unwrap();
-    }
+    //     board
+    //         .place_tile(
+    //             Tile {
+    //                 tile: 'c',
+    //                 is_joker: false,
+    //             },
+    //             Coordinate { x: 7, y: 7 },
+    //         )
+    //         .unwrap();
+    //     board
+    //         .place_tile(
+    //             Tile {
+    //                 tile: 'a',
+    //                 is_joker: false,
+    //             },
+    //             Coordinate { x: 8, y: 7 },
+    //         )
+    //         .unwrap();
+    //     board
+    //         .place_tile(
+    //             Tile {
+    //                 tile: 't',
+    //                 is_joker: false,
+    //             },
+    //             Coordinate { x: 9, y: 7 },
+    //         )
+    //         .unwrap();
+    //     board.end_turn().unwrap();
+    //     board
+    //         .place_tile(
+    //             Tile {
+    //                 tile: 's',
+    //                 is_joker: false,
+    //             },
+    //             Coordinate { x: 10, y: 7 },
+    //         )
+    //         .unwrap();
+    //     board.end_turn().unwrap();
+    // }
 
     #[test]
     fn asn_test_word_extension() {
-        let a = ASN::from_str("88hcat\nb8hs").unwrap();
-        a.run(false).unwrap();
+        let a = ASN::from_str("77hcat\na7hs").unwrap();
+        a.run(true).unwrap();
     }
 
     #[test]

@@ -7,6 +7,7 @@ static LANGUAGE_DATA: &[(&str, &str)] = &[
     ("dutch", include_str!("../../data/dutch/letters.csv")),
 ];
 
+#[derive(Debug)]
 pub struct Language {
     pub name: String,
     pub distribution: Distribution,
@@ -68,6 +69,7 @@ impl Language {
     }
 }
 
+#[derive(Debug)]
 pub struct LetterValues(HashMap<HandTile, usize>);
 
 impl LetterValues {
@@ -76,6 +78,7 @@ impl LetterValues {
     }
 }
 
+#[derive(Debug)]
 pub struct Distribution(Vec<(HandTile, usize)>);
 
 impl Distribution {

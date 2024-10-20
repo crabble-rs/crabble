@@ -1,9 +1,12 @@
+use core::panic;
 use std::fmt::Display;
 
 use crate::{
-    Board, BoardLayout, BoardTile, Coordinate, Direction, Hand, Square, Tile, WordPlacementError,
+    language::Language, Board, BoardLayout, BoardTile, Coordinate, Direction, Hand, HandTile,
+    Square, Tile, WordPlacementError,
 };
 
+#[derive(Debug)]
 pub struct Player {
     name: String,
     score: isize,
@@ -20,6 +23,7 @@ impl Player {
     }
 }
 
+#[derive(Debug)]
 pub enum GameState {
     /// Turn of a player referenced by index
     Turn(usize),
@@ -35,10 +39,12 @@ impl Display for GameState {
     }
 }
 
+#[derive(Debug)]
 pub struct Game {
     board: Board,
     players: Vec<Player>,
     state: GameState,
+    language: Language,
 }
 
 impl Display for Game {
@@ -64,6 +70,7 @@ impl Game {
         Self {
             board: Board::from(board_layout),
             state: GameState::Turn(0),
+            language: Language::by_name("english").unwrap(),
             players,
         }
     }
@@ -109,6 +116,21 @@ impl Game {
 
         // select direction for gap check
         let dir = match axes {
+            (Some(_), Some(_)) => {
+                let h = self
+                    .board
+                    .find_range(first_coord, Direction::Horizontal)
+                    .collect::<Vec<_>>();
+                let v = self
+                    .board
+                    .find_range(first_coord, Direction::Vertical)
+                    .collect::<Vec<_>>();
+                if h.len() > v.len() {
+                    Direction::Horizontal
+                } else {
+                    Direction::Vertical
+                }
+            }
             (Some(_), _) => Direction::Vertical,
             (_, Some(_)) => Direction::Horizontal,
             (None, None) => return Err(WordPlacementError::InvalidDirection),
@@ -167,6 +189,17 @@ impl Game {
             }
         }
 
+        let score = self.score_word(self.board.find_range(first_coord, dir), dir);
+
+        match self.state {
+            GameState::Turn(n) => {
+                let player_id = n % self.players.len();
+                self.players.get_mut(player_id).unwrap().score += score;
+                self.state = GameState::Turn(n + 1);
+            }
+            GameState::Done => panic!(),
+        }
+
         for coord in self.board.find_range(first_coord, dir) {
             self.board
                 .get_tile_mut(coord)
@@ -177,5 +210,72 @@ impl Game {
         }
 
         Ok(())
+    }
+
+    fn score_word(&self, word: impl Iterator<Item = Coordinate>, dir: Direction) -> isize {
+        let other_dir = dir.flip();
+        let mut total = 0;
+
+        let word_vec: Vec<_> = word.collect();
+
+        total += self.score_range(word_vec.iter().cloned(), false);
+
+        for tile in word_vec {
+            let range = self.board.find_range(tile, other_dir);
+            let range_vec: Vec<_> = range.collect();
+            if range_vec.len() > 1 {
+                total += self.score_range(range_vec.iter().cloned(), true);
+            }
+        }
+
+        total
+    }
+
+    fn score_range(&self, word: impl Iterator<Item = Coordinate>, is_adjacent_word: bool) -> isize {
+        let mut total: isize = 0;
+        let mut word_multiplier = 1;
+
+        for letter in word {
+            let tile = self
+                .board
+                .get_tile(letter)
+                .map(|tile| {
+                    let t = tile.tile;
+                    match t.is_joker {
+                        true => HandTile::Joker,
+                        false => HandTile::Letter(t.tile),
+                    }
+                })
+                .unwrap();
+
+            let mut value = self.language.values.get(tile) as isize;
+
+            if !is_adjacent_word && self.board.get_tile(letter).unwrap().is_provisional {
+                match self.board.get_square(letter).unwrap() {
+                    Square::Empty => (),
+                    Square::CenterSquare => word_multiplier = word_multiplier * 2,
+                    Square::LetterMultiplier(m) => value = value * (m as isize),
+                    Square::WordMultiplier(m) => word_multiplier = word_multiplier * (m as isize),
+                };
+            }
+
+            total += value;
+        }
+        total * word_multiplier
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::asn::ASN;
+    use std::str::FromStr;
+
+    #[test]
+    fn scoring_test_1() {
+        let a = ASN::from_str("77hcat\na7hs").unwrap();
+        let game = a.run(true).unwrap();
+
+        let scores: Vec<_> = game.players.iter().map(|p| p.score).collect();
+        assert_eq!(scores, [10, 6])
     }
 }
