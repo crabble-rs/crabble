@@ -186,26 +186,6 @@ impl Board {
         todo!()
     }
 
-    fn place_tile(&mut self, tile: Tile, coord: Coordinate) -> Result<(), WordPlacementError> {
-        // is_provisionary is true
-        // we place the tiles on
-        let board_tile = self
-            .get_tile_mut(coord)
-            .ok_or(WordPlacementError::TileOutOufBounds)?;
-
-        match board_tile {
-            Some(_) => Err(WordPlacementError::TileOccupied),
-            None => {
-                *board_tile = Some(BoardTile {
-                    tile,
-                    is_provisional: true,
-                });
-                self.provisionary_tiles_count += 1;
-                Ok(())
-            }
-        }
-    }
-
     fn get_square(&self, coord: Coordinate) -> Option<Square> {
         self.layout.get(coord)
     }

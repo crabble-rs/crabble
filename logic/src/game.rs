@@ -75,14 +75,29 @@ impl Game {
         }
     }
 
-    pub fn place_tile(&mut self, tile: Tile, coord: Coordinate) -> Result<(), WordPlacementError> {
-        // TODO: Probably check if the player has the required tiles, and modify the players accordingly
-
-        self.board.place_tile(tile, coord)
-    }
-
     pub fn get_tile(&self, coord: Coordinate) -> Option<BoardTile> {
         self.board.get_tile(coord)
+    }
+
+    pub fn place_tile(&mut self, tile: Tile, coord: Coordinate) -> Result<(), WordPlacementError> {
+        // is_provisionary is true
+        // we place the tiles on
+        let board_tile = self
+            .board
+            .get_tile_mut(coord)
+            .ok_or(WordPlacementError::TileOutOufBounds)?;
+
+        match board_tile {
+            Some(_) => Err(WordPlacementError::TileOccupied),
+            None => {
+                *board_tile = Some(BoardTile {
+                    tile,
+                    is_provisional: true,
+                });
+                self.board.provisionary_tiles_count += 1;
+                Ok(())
+            }
+        }
     }
 
     pub fn end_turn(&mut self) -> Result<(), WordPlacementError> {
