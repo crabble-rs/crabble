@@ -15,13 +15,14 @@ pub struct BoardLayout {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum WordPlacementError {
+pub enum CrabbleError {
     TileOccupied,
     PlayedWordEmpty,
     InvalidDirection,
     ScatteredProvisionalTile,
     WordNotAdjacent,
     TileOutOufBounds,
+    BagEmpty,
 }
 
 impl BoardLayout {
@@ -455,78 +456,6 @@ mod test {
         assert_eq!(s, include_str!("../../data/scrabble_layout.txt"),);
     }
 
-    // #[test]
-    // fn test_any_first_play() {
-    //     // create default board layout
-    //     let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
-    //     let mut board: Board = layout.into();
-
-    //     board
-    //         .place_tile(
-    //             Tile {
-    //                 tile: 'a',
-    //                 is_joker: false,
-    //             },
-    //             Coordinate { x: 7, y: 7 },
-    //         )
-    //         .unwrap();
-    //     board
-    //         .place_tile(
-    //             Tile {
-    //                 tile: 'a',
-    //                 is_joker: false,
-    //             },
-    //             Coordinate { x: 6, y: 7 },
-    //         )
-    //         .unwrap();
-    //     board.end_turn().unwrap();
-    // }
-
-    // #[test]
-    // fn test_word_extension() {
-    //     let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
-    //     let mut board: Board = layout.into();
-
-    //     board
-    //         .place_tile(
-    //             Tile {
-    //                 tile: 'c',
-    //                 is_joker: false,
-    //             },
-    //             Coordinate { x: 7, y: 7 },
-    //         )
-    //         .unwrap();
-    //     board
-    //         .place_tile(
-    //             Tile {
-    //                 tile: 'a',
-    //                 is_joker: false,
-    //             },
-    //             Coordinate { x: 8, y: 7 },
-    //         )
-    //         .unwrap();
-    //     board
-    //         .place_tile(
-    //             Tile {
-    //                 tile: 't',
-    //                 is_joker: false,
-    //             },
-    //             Coordinate { x: 9, y: 7 },
-    //         )
-    //         .unwrap();
-    //     board.end_turn().unwrap();
-    //     board
-    //         .place_tile(
-    //             Tile {
-    //                 tile: 's',
-    //                 is_joker: false,
-    //             },
-    //             Coordinate { x: 10, y: 7 },
-    //         )
-    //         .unwrap();
-    //     board.end_turn().unwrap();
-    // }
-
     #[test]
     fn asn_test_word_extension() {
         let a = ASN::from_str("77hcat\na7hs").unwrap();
@@ -537,14 +466,14 @@ mod test {
     fn asn_invalid_play() {
         let a = ASN::from_str("77hcat\ne8hs").unwrap();
         let err = a.run(false).unwrap_err();
-        assert_eq!(err, WordPlacementError::WordNotAdjacent);
+        assert_eq!(err, CrabbleError::WordNotAdjacent);
     }
 
     #[test]
     fn asn_invalid_play_overlap() {
         let a = ASN::from_str("77hcat\n97hmeow").unwrap();
         let err = a.run(false).unwrap_err();
-        assert_eq!(err, WordPlacementError::TileOccupied);
+        assert_eq!(err, CrabbleError::TileOccupied);
     }
 
     #[test]

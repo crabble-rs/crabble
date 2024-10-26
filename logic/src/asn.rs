@@ -3,7 +3,7 @@ use std::{io::Read, path::PathBuf, str::FromStr};
 
 use crate::game::{Game, Player};
 
-use crate::{Coordinate, Direction, Tile, WordPlacementError};
+use crate::{Coordinate, Direction, Tile, CrabbleError};
 
 pub struct ASN {
     pub lines: Vec<ASNLine>,
@@ -20,7 +20,7 @@ impl ASN {
         ASN::from_str(&s).unwrap()
     }
 
-    pub fn run(self, print_board: bool) -> Result<Game, WordPlacementError> {
+    pub fn run(self, print_board: bool) -> Result<Game, CrabbleError> {
         use super::*;
 
         let layout = BoardLayout::from_fn((15, 15), standard_board_layout);

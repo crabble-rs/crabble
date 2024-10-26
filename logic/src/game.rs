@@ -2,8 +2,8 @@ use core::panic;
 use std::fmt::Display;
 
 use crate::{
-    language::Language, Board, BoardLayout, BoardTile, Coordinate, Direction, Hand, HandTile,
-    Square, Tile, WordPlacementError,
+    bag::Bag, language::Language, Board, BoardLayout, BoardTile, Coordinate, CrabbleError,
+    Direction, Hand, HandTile, Square, Tile,
 };
 
 #[derive(Debug)]
@@ -36,6 +36,19 @@ impl Display for GameState {
             GameState::Turn(n) => write!(f, "Turn {n}"),
             GameState::Done => write!(f, "Done"),
         }
+    }
+}
+
+impl Player {
+    pub fn draw_from_bag(&mut self, bag: &mut Bag) -> Result<(), CrabbleError> {
+        while self.hand.letters.len() < 8 {
+            let drawn_tile = bag.take();
+            match drawn_tile {
+                Some(x) => self.hand.letters.push(x),
+                None => return Err(CrabbleError::BagEmpty),
+            }
+        }
+        Ok(())
     }
 }
 
@@ -79,16 +92,16 @@ impl Game {
         self.board.get_tile(coord)
     }
 
-    pub fn place_tile(&mut self, tile: Tile, coord: Coordinate) -> Result<(), WordPlacementError> {
+    pub fn place_tile(&mut self, tile: Tile, coord: Coordinate) -> Result<(), CrabbleError> {
         // is_provisionary is true
         // we place the tiles on
         let board_tile = self
             .board
             .get_tile_mut(coord)
-            .ok_or(WordPlacementError::TileOutOufBounds)?;
+            .ok_or(CrabbleError::TileOutOufBounds)?;
 
         match board_tile {
-            Some(_) => Err(WordPlacementError::TileOccupied),
+            Some(_) => Err(CrabbleError::TileOccupied),
             None => {
                 *board_tile = Some(BoardTile {
                     tile,
@@ -100,7 +113,7 @@ impl Game {
         }
     }
 
-    pub fn end_turn(&mut self) -> Result<(), WordPlacementError> {
+    pub fn end_turn(&mut self) -> Result<(), CrabbleError> {
         // TODO: Refactor this function
         // - Things which only concern the board should be lowered into functions on Board
         // - Draw new tiles for the player
@@ -115,7 +128,7 @@ impl Game {
 
         // check that we have played at least a tile
         let Some((first_coord, _)) = tile_iter.next() else {
-            return Err(WordPlacementError::PlayedWordEmpty);
+            return Err(CrabbleError::PlayedWordEmpty);
         };
 
         // check that we have played tiles in a (straight) line
@@ -148,7 +161,7 @@ impl Game {
             }
             (Some(_), _) => Direction::Vertical,
             (_, Some(_)) => Direction::Horizontal,
-            (None, None) => return Err(WordPlacementError::InvalidDirection),
+            (None, None) => return Err(CrabbleError::InvalidDirection),
         };
 
         let coords_vec: Vec<Coordinate> = self.board.find_range(first_coord, dir).collect();
@@ -164,7 +177,7 @@ impl Game {
                 println!("{coord:?}");
                 println!("{tile:?}");
 
-                return Err(WordPlacementError::ScatteredProvisionalTile);
+                return Err(CrabbleError::ScatteredProvisionalTile);
             }
         }
 
@@ -199,7 +212,7 @@ impl Game {
                         .unwrap()
                         .eq(&Square::CenterSquare)
                 }) {
-                    return Err(WordPlacementError::WordNotAdjacent);
+                    return Err(CrabbleError::WordNotAdjacent);
                 }
             }
         }
