@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt::Display};
 
-use crate::HandTile;
+use crate::{CrabbleError, HandTile};
 
 static LANGUAGE_DATA: &[(&str, &str)] = &[
     ("english", include_str!("../../data/english/letters.csv")),
@@ -15,14 +15,14 @@ pub struct Language {
 }
 
 impl Language {
-    pub fn by_name(lang: &str) -> Result<Self, ()> {
+    pub fn by_name(lang: &str) -> Result<Self, CrabbleError> {
         let Some((_, data)) = LANGUAGE_DATA.iter().find(|(l, _)| *l == lang) else {
-            return Err(());
+            return Err(CrabbleError::InvalidLanguage);
         };
         Language::parse_csv(lang, data)
     }
 
-    pub fn parse_csv(name: &str, csv: &str) -> Result<Self, ()> {
+    pub fn parse_csv(name: &str, csv: &str) -> Result<Self, CrabbleError> {
         let mut vec = Vec::new();
         let mut values = HashMap::new();
 
@@ -40,22 +40,22 @@ impl Language {
             let value = parts.next();
 
             let (Some(letter), Some(amount), Some(value)) = (letter, amount, value) else {
-                return Err(());
+                return Err(CrabbleError::InvalidLanguage);
             };
 
             let tile = if letter == " " {
                 HandTile::Joker
             } else {
                 let mut chars = letter.chars();
-                let first = chars.next().ok_or(())?;
+                let first = chars.next().ok_or(CrabbleError::InvalidLanguage)?;
                 if chars.next().is_some() {
-                    return Err(());
+                    return Err(CrabbleError::InvalidLanguage);
                 }
                 HandTile::Letter(first)
             };
 
-            let amount = amount.parse().map_err(|_| ())?;
-            let value = value.parse().map_err(|_| ())?;
+            let amount = amount.parse().map_err(|_| CrabbleError::InvalidLanguage)?;
+            let value = value.parse().map_err(|_| CrabbleError::InvalidLanguage)?;
 
             vec.push((tile, amount));
             values.insert(tile, value);

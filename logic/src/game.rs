@@ -55,6 +55,7 @@ impl Player {
 #[derive(Debug)]
 pub struct Game {
     board: Board,
+    bag: Bag,
     players: Vec<Player>,
     state: GameState,
     language: Language,
@@ -74,16 +75,23 @@ impl Display for Game {
 }
 
 impl Game {
-    pub fn new(players: Vec<Player>, board_layout: BoardLayout) -> Self {
+    pub fn new(mut players: Vec<Player>, board_layout: BoardLayout, language: Language) -> Self {
         assert!(!players.is_empty());
+        assert!(players.len() >= 1);
         assert!(players.len() <= 4);
 
-        // TODO: Probably put some tiles into the players hands
+        let mut bag = Bag::full(&language.distribution);
+
+        for player in &mut players {
+            player.draw_from_bag(&mut bag).unwrap();
+            assert!(player.hand.letters.len() == 7);
+        }
 
         Self {
             board: Board::from(board_layout),
+            bag,
             state: GameState::Turn(0),
-            language: Language::by_name("english").unwrap(),
+            language,
             players,
         }
     }
@@ -238,6 +246,10 @@ impl Game {
         }
 
         Ok(())
+    }
+
+    fn end_game() {
+        // TODO: last round functionality
     }
 
     fn score_word(&self, word: impl Iterator<Item = Coordinate>, dir: Direction) -> isize {

@@ -4,6 +4,6 @@ resolver = "2"
 members = [
     "logic",
     "asn_tests_runner",
-    "networking/server",
+    "networking/server", "crabble-tui",
 ]
 

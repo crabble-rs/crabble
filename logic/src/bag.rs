@@ -3,6 +3,7 @@ use crate::language::Language;
 use crate::{language::Distribution, HandTile};
 use rand::{seq::SliceRandom, thread_rng, Rng};
 
+#[derive(Debug)]
 pub struct Bag(Vec<HandTile>);
 
 impl Bag {
@@ -10,7 +11,7 @@ impl Bag {
         Bag(Vec::new())
     }
 
-    pub fn full(distribution: Distribution) -> Self {
+    pub fn full(distribution: &Distribution) -> Self {
         let mut vec = Vec::new();
         for (tile, amount) in distribution.iter() {
             for _ in 0..amount {
@@ -47,7 +48,7 @@ impl Bag {
 #[test]
 fn test_english() {
     let lang = Language::by_name("english").unwrap();
-    let mut bag = Bag::full(lang.distribution);
+    let mut bag = Bag::full(&lang.distribution);
 
     let mut number_of_e = 0;
     while !bag.is_empty() {
@@ -63,7 +64,7 @@ fn test_english() {
 #[test]
 fn test_dutch() {
     let lang = Language::by_name("dutch").unwrap();
-    let mut bag = Bag::full(lang.distribution);
+    let mut bag = Bag::full(&lang.distribution);
 
     let mut number_of_e = 0;
     while !bag.is_empty() {

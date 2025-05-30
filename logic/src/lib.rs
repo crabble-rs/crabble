@@ -2,7 +2,7 @@
 
 pub mod asn;
 mod bag;
-mod game;
+pub mod game;
 mod language;
 
 use std::fmt::Display;
@@ -23,6 +23,7 @@ pub enum CrabbleError {
     WordNotAdjacent,
     TileOutOufBounds,
     BagEmpty,
+    InvalidLanguage,
 }
 
 impl BoardLayout {
