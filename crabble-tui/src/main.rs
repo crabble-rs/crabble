@@ -1,12 +1,13 @@
 // TODO: get rid of UB lol ???
-use logic::game;
+use logic::game::{self, Game};
 
 use color_eyre::Result;
-use crossterm::event::{self, KeyCode, KeyEventKind};
-use ratatui::layout::{Constraint, Layout, Position};
+use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind};
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
 use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, List, ListItem, Paragraph, Widget};
 use ratatui::{DefaultTerminal, Frame};
 
 fn main() -> Result<()> {
@@ -19,14 +20,28 @@ fn main() -> Result<()> {
 
 /// App holds the state of the application
 struct App {
-    /// Current value of the input box
-    input: String,
-    /// Position of cursor in the editor area.
-    character_index: usize,
-    /// Current input mode
-    input_mode: InputMode,
-    /// History of recorded messages
-    messages: Vec<String>,
+    /// Current Game being displayed by the TUI
+    game: Option<Game>,
+    /// Current state of the TUI app
+    state: State,
+    /// Prompts for game settings
+    settings: Settings,
+}
+
+struct Settings {
+    num_players: StringField,
+    language: StringField,
+    start_button: Button,
+    active_box: ActiveBox,
+}
+
+struct Button {
+    text: String,
+    selected: bool,
+}
+
+struct GameTurn {
+    //....
 }
 
 enum InputMode {
@@ -34,13 +49,38 @@ enum InputMode {
     Editing,
 }
 
-impl App {
-    const fn new() -> Self {
-        Self {
-            input: String::new(),
-            input_mode: InputMode::Normal,
-            messages: Vec::new(),
+enum State {
+    Setup,
+    Gaming,
+}
+
+enum ActiveBox {
+    NumPlayers,
+    Language,
+    Start,
+}
+
+/// A new-type representing a string field with a label.
+#[derive(Debug)]
+
+struct StringField {
+    // whether this field is currently in focus
+    selected: bool,
+    /// Label above the field
+    label: String,
+    /// Position of cursor in the editor area.
+    character_index: usize,
+    /// Text currently in the box
+    input: String,
+}
+
+impl StringField {
+    fn new(label: String) -> Self {
+        StringField {
+            selected: false,
+            label,
             character_index: 0,
+            input: String::new(),
         }
     }
 
@@ -103,109 +143,166 @@ impl App {
     }
 
     fn submit_message(&mut self) {
-        self.messages.push(self.input.clone());
+        // somehow save this particular setting
         self.input.clear();
         self.reset_cursor();
+    }
+}
+
+impl Widget for &Button {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let input = Paragraph::new(self.text.as_str()).style(match self.selected {
+            true => Style::default(),
+            false => Style::default().fg(Color::Yellow),
+        });
+
+        input.render(area, buf);
+    }
+}
+
+impl Button {
+    fn new(text: String) -> Self {
+        Button {
+            selected: false,
+            text,
+        }
+    }
+}
+
+impl Widget for &StringField {
+    fn render(self, area: Rect, buf: &mut Buffer) {
+        let input = Paragraph::new(self.input.as_str())
+            .style(match self.selected {
+                true => Style::default(),
+                false => Style::default().fg(Color::Yellow),
+            })
+            .block(Block::bordered().title(self.label.clone()));
+
+        input.render(area, buf);
+    }
+}
+
+impl Settings {
+    fn new() -> Self {
+        Settings {
+            num_players: StringField::new("How many players are there?".to_owned()),
+            language: StringField::new("What language would you like to play in?".to_owned()),
+            start_button: Button::new("Start Game!".to_owned()),
+            active_box: ActiveBox::NumPlayers,
+        }
+    }
+
+    fn get_active_box(&mut self) -> Option<&mut StringField> {
+        match self.active_box {
+            ActiveBox::NumPlayers => Some(&mut self.num_players),
+            ActiveBox::Language => Some(&mut self.language),
+            ActiveBox::Start => None,
+        }
+    }
+
+    fn select_next_box(&mut self) {
+        match self.active_box {
+            ActiveBox::NumPlayers => {
+                self.active_box = ActiveBox::Language;
+                self.num_players.selected = false;
+                self.language.selected = true;
+                self.start_button.selected = false;
+            }
+            ActiveBox::Language => {
+                self.active_box = ActiveBox::Start;
+                self.num_players.selected = false;
+                self.language.selected = false;
+                self.start_button.selected = true;
+            }
+            ActiveBox::Start => {
+                self.active_box = ActiveBox::NumPlayers;
+                self.num_players.selected = true;
+                self.language.selected = false;
+                self.start_button.selected = false;
+            }
+        }
+    }
+
+    fn on_key_press(&mut self, event: KeyEvent) {
+        match event.code {
+            KeyCode::Tab => self.select_next_box(),
+            KeyCode::Char(c) => self.get_active_box().unwrap().enter_char(c),
+
+            KeyCode::Backspace => self.get_active_box().unwrap().delete_char(),
+            KeyCode::Left => self.get_active_box().unwrap().move_cursor_left(),
+            KeyCode::Right => self.get_active_box().unwrap().move_cursor_right(),
+            _ => {}
+        }
+    }
+
+    fn render(&self, frame: &mut Frame) {
+        let [num_players_area, language_area, start_area] =
+            Layout::vertical(Constraint::from_lengths([3, 3, 1])).areas(frame.area());
+
+        frame.render_widget(&self.num_players, num_players_area);
+        frame.render_widget(&self.language, language_area);
+
+        frame.render_widget(&self.start_button, start_area);
+
+        let (active_area, active_offset) = match self.active_box {
+            ActiveBox::Language => (language_area, self.language.character_index),
+            ActiveBox::NumPlayers => (num_players_area, self.num_players.character_index),
+            ActiveBox::Start => (start_area, 0),
+        };
+        if active_area != start_area {
+            let cursor_pos =
+                Position::new(active_area.x + active_offset as u16 + 1, active_area.y + 1);
+            frame.set_cursor_position(cursor_pos);
+        }
+    }
+}
+
+impl App {
+    fn new() -> Self {
+        Self {
+            game: None,
+            settings: Settings::new(),
+            state: State::Setup,
+        }
+    }
+
+    fn handle_events(&mut self) -> Result<()> {
+        if let Some(key) = event::read()?.as_key_press_event() {
+            self.on_key_press(key);
+        }
+        Ok(())
+    }
+
+    fn on_key_press(&mut self, event: KeyEvent) {
+        match self.state {
+            State::Setup => match event.code {
+                KeyCode::Enter => match self.settings.active_box {
+                    ActiveBox::Language | ActiveBox::NumPlayers => {
+                        self.settings.get_active_box().unwrap().submit_message()
+                    }
+                    ActiveBox::Start => self.start_game(),
+                },
+                _ => self.settings.on_key_press(event),
+            },
+            State::Gaming => todo!(),
+        }
+    }
+
+    fn start_game(&mut self) {
+        todo!()
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.render(frame))?;
-
-            if let Some(key) = event::read()?.as_key_press_event() {
-                match self.input_mode {
-                    InputMode::Normal => match key.code {
-                        KeyCode::Char('e') => {
-                            self.input_mode = InputMode::Editing;
-                        }
-                        KeyCode::Char('q') => {
-                            return Ok(());
-                        }
-                        _ => {}
-                    },
-                    InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
-                        KeyCode::Enter => self.submit_message(),
-                        KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                        KeyCode::Backspace => self.delete_char(),
-                        KeyCode::Left => self.move_cursor_left(),
-                        KeyCode::Right => self.move_cursor_right(),
-                        KeyCode::Esc => self.input_mode = InputMode::Normal,
-                        _ => {}
-                    },
-                    InputMode::Editing => {}
-                }
-            }
+            self.handle_events()?;
         }
     }
 
     fn render(&self, frame: &mut Frame) {
-        let vertical = Layout::vertical([
-            Constraint::Length(1),  // help area
-            Constraint::Length(17), // message area
-            Constraint::Length(3),  // input area
-        ]);
-
-        let [help_area, messages_area, input_area] = vertical.areas(frame.area());
-
-        let (msg, style) = match self.input_mode {
-            InputMode::Normal => (
-                vec![
-                    "Press ".into(),
-                    "q".bold(),
-                    " to exit, ".into(),
-                    "e".bold(),
-                    " to start editing.".bold(),
-                ],
-                Style::default().add_modifier(Modifier::RAPID_BLINK),
-            ),
-            InputMode::Editing => (
-                vec![
-                    "Press ".into(),
-                    "Esc".bold(),
-                    " to stop editing, ".into(),
-                    "Enter".bold(),
-                    " to record the message".into(),
-                ],
-                Style::default(),
-            ),
-        };
-        let text = Text::from(Line::from(msg)).patch_style(style);
-        let help_message = Paragraph::new(text);
-        frame.render_widget(help_message, help_area);
-
-        let input = Paragraph::new(self.input.as_str())
-            .style(match self.input_mode {
-                InputMode::Normal => Style::default(),
-                InputMode::Editing => Style::default().fg(Color::Yellow),
-            })
-            .block(Block::bordered().title("Input"));
-        frame.render_widget(input, input_area);
-        match self.input_mode {
-            // Hide the cursor. `Frame` does this by default, so we don't need to do anything here
-            InputMode::Normal => {}
-
-            // Make the cursor visible and ask ratatui to put it at the specified coordinates after
-            // rendering
-            #[expect(clippy::cast_possible_truncation)]
-            InputMode::Editing => frame.set_cursor_position(Position::new(
-                // Draw the cursor at the current position in the input field.
-                // This position can be controlled via the left and right arrow key
-                input_area.x + self.character_index as u16 + 1,
-                // Move one line down, from the border to the input line
-                input_area.y + 1,
-            )),
+        match self.state {
+            State::Setup => self.settings.render(frame),
+            State::Gaming => todo!(),
         }
-
-        let messages: Vec<ListItem> = self
-            .messages
-            .iter()
-            .enumerate()
-            .map(|(i, m)| {
-                let content = Line::from(Span::raw(format!("{i}: {m}")));
-                ListItem::new(content)
-            })
-            .collect();
-        let messages = List::new(messages).block(Block::bordered().title("Messages"));
-        frame.render_widget(messages, messages_area);
     }
 }
