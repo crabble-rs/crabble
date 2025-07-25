@@ -1,8 +1,12 @@
+use core::num;
+
 // TODO: get rid of UB lol ???
-use logic::game::{self, Game};
+use logic::game::{self, Game, Player};
+use logic::language::Language;
 
 use color_eyre::Result;
 use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind};
+use logic::{BoardLayout, standard_board_layout};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style, Stylize};
@@ -20,12 +24,12 @@ fn main() -> Result<()> {
 
 /// App holds the state of the application
 struct App {
-    /// Current Game being displayed by the TUI
-    game: Option<Game>,
     /// Current state of the TUI app
     state: State,
     /// Prompts for game settings
     settings: Settings,
+    /// Current render of game state
+    game_state: Option<GameTurn>,
 }
 
 struct Settings {
@@ -41,7 +45,17 @@ struct Button {
 }
 
 struct GameTurn {
-    //....
+    // struct that holds everything that needs to be rendered as part of the current game turn
+    // probably what we want here is some kind of textual representation of:
+    // - the board
+    // - current player's hand
+    // - current player's desired move, in ASN
+    // - some kind of submit button
+    game: Game,
+    curr_board: StringField,
+    curr_hand: StringField,
+    curr_move: StringField,
+    submit: Button,
 }
 
 enum InputMode {
@@ -66,6 +80,8 @@ enum ActiveBox {
 struct StringField {
     // whether this field is currently in focus
     selected: bool,
+    // whether this field is at all editable (TODO: actually implement this)
+    editable: bool,
     /// Label above the field
     label: String,
     /// Position of cursor in the editor area.
@@ -74,14 +90,31 @@ struct StringField {
     input: String,
 }
 
+impl GameTurn {
+    fn new(game: Game) -> Self {
+        GameTurn {
+            game,
+            curr_board: StringField::new("Current Board".to_owned()),
+            curr_hand: StringField::new("Current Player's hand".to_owned()),
+            curr_move: StringField::new("Move".to_owned()),
+            submit: Button::new("Submit Move".to_owned()),
+        }
+    }
+}
+
 impl StringField {
     fn new(label: String) -> Self {
         StringField {
             selected: false,
+            editable: false,
             label,
             character_index: 0,
             input: String::new(),
         }
+    }
+
+    fn make_editable(&mut self) {
+        self.editable = true
     }
 
     fn move_cursor_left(&mut self) {
@@ -260,9 +293,9 @@ impl Settings {
 impl App {
     fn new() -> Self {
         Self {
-            game: None,
             settings: Settings::new(),
             state: State::Setup,
+            game_state: None,
         }
     }
 
@@ -289,7 +322,24 @@ impl App {
     }
 
     fn start_game(&mut self) {
-        todo!()
+        let num_players = self
+            .settings
+            .num_players
+            .input
+            .parse::<u32>()
+            .expect("invalid number of players");
+        let language = Language::by_name(&self.settings.language.input).expect("invalid language");
+
+        let mut players = Vec::new();
+        for i in 0..num_players {
+            let player = Player::new(format!("player {}", i));
+            players.push(player);
+        }
+
+        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+
+        let game = Game::new(players, layout, language);
+        self.game_state = Some(GameTurn::new(game));
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {

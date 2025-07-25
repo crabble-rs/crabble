@@ -1,3 +1,5 @@
+//! gamers
+
 use core::panic;
 use std::fmt::Display;
 

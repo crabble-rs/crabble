@@ -41,7 +41,7 @@ impl BoardLayout {
         )
     }
 
-    fn from_fn(dimensions: (usize, usize), f: impl Fn(Coordinate) -> Square) -> Self {
+    pub fn from_fn(dimensions: (usize, usize), f: impl Fn(Coordinate) -> Square) -> Self {
         let mut squares = vec![vec![Square::Empty; dimensions.1]; dimensions.0];
 
         for (x, col) in squares.iter_mut().enumerate() {
@@ -57,7 +57,7 @@ impl BoardLayout {
     }
 }
 
-fn standard_board_layout(Coordinate { mut x, mut y }: Coordinate) -> Square {
+pub fn standard_board_layout(Coordinate { mut x, mut y }: Coordinate) -> Square {
     if x == 7 && y == 7 {
         return Square::CenterSquare;
     }
