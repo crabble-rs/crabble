@@ -52,10 +52,16 @@ struct GameTurn {
     // - current player's desired move, in ASN
     // - some kind of submit button
     game: Game,
+    active_box: GameTurnActiveBox,
     curr_board: StringField,
     curr_hand: StringField,
     curr_move: StringField,
     submit: Button,
+}
+
+enum GameTurnActiveBox {
+    Move,
+    Submit,
 }
 
 enum InputMode {
@@ -92,11 +98,22 @@ struct StringField {
 
 impl GameTurn {
     fn new(game: Game) -> Self {
+        let board = format!("{}", game.board());
+
         GameTurn {
             game,
-            curr_board: StringField::new("Current Board".to_owned()),
+            active_box: GameTurnActiveBox::Move,
+            curr_board: {
+                let mut field = StringField::new("Current Board".to_owned());
+                field.input = board;
+                field
+            },
             curr_hand: StringField::new("Current Player's hand".to_owned()),
-            curr_move: StringField::new("Move".to_owned()),
+            curr_move: {
+                let mut field = StringField::new("Move".to_owned());
+                field.selected = true;
+                field
+            },
             submit: Button::new("Submit Move".to_owned()),
         }
     }
@@ -317,7 +334,32 @@ impl App {
                 },
                 _ => self.settings.on_key_press(event),
             },
-            State::Gaming => todo!(),
+            State::Gaming => {
+                let game_turn = self.game_state.as_mut().unwrap();
+                match event.code {
+                    KeyCode::Enter => match game_turn.active_box {
+                        GameTurnActiveBox::Move => {
+                            game_turn.active_box = GameTurnActiveBox::Submit;
+                            game_turn.curr_move.selected = false;
+                            game_turn.submit.selected = true;
+                        }
+                        GameTurnActiveBox::Submit => todo!(),
+                    },
+                    KeyCode::Tab => match game_turn.active_box {
+                        GameTurnActiveBox::Move => {
+                            game_turn.active_box = GameTurnActiveBox::Submit;
+                            game_turn.curr_move.selected = false;
+                            game_turn.submit.selected = true;
+                        }
+                        GameTurnActiveBox::Submit => {
+                            game_turn.active_box = GameTurnActiveBox::Move;
+                            game_turn.curr_move.selected = true;
+                            game_turn.submit.selected = false;
+                        }
+                    },
+                    _ => (),
+                };
+            }
         }
     }
 
@@ -340,6 +382,7 @@ impl App {
 
         let game = Game::new(players, layout, language);
         self.game_state = Some(GameTurn::new(game));
+        self.state = State::Gaming;
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
@@ -352,7 +395,19 @@ impl App {
     fn render(&self, frame: &mut Frame) {
         match self.state {
             State::Setup => self.settings.render(frame),
-            State::Gaming => todo!(),
+            State::Gaming => self.render_game_state(frame),
         }
+    }
+
+    fn render_game_state(&self, frame: &mut Frame) {
+        let game_turn = self.game_state.as_ref().unwrap();
+
+        let [cur_board, cur_hand, cur_move, button] =
+            Layout::vertical(Constraint::from_lengths([17, 3, 3, 1])).areas(frame.area());
+
+        frame.render_widget(&game_turn.curr_board, cur_board);
+        frame.render_widget(&game_turn.curr_hand, cur_hand);
+        frame.render_widget(&game_turn.curr_move, cur_move);
+        frame.render_widget(&game_turn.submit, button);
     }
 }

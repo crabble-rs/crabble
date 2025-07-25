@@ -43,7 +43,7 @@ impl Display for GameState {
 
 impl Player {
     pub fn draw_from_bag(&mut self, bag: &mut Bag) -> Result<(), CrabbleError> {
-        while self.hand.letters.len() < 8 {
+        while self.hand.letters.len() < 7 {
             let drawn_tile = bag.take();
             match drawn_tile {
                 Some(x) => self.hand.letters.push(x),
@@ -86,7 +86,7 @@ impl Game {
 
         for player in &mut players {
             player.draw_from_bag(&mut bag).unwrap();
-            assert!(player.hand.letters.len() == 7);
+            assert_eq!(player.hand.letters.len(), 7);
         }
 
         Self {
@@ -96,6 +96,10 @@ impl Game {
             language,
             players,
         }
+    }
+
+    pub fn board(&self) -> &Board {
+        &self.board
     }
 
     pub fn get_tile(&self, coord: Coordinate) -> Option<BoardTile> {

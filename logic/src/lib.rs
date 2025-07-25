@@ -3,7 +3,7 @@
 pub mod asn;
 mod bag;
 pub mod game;
-mod language;
+pub mod language;
 
 use std::fmt::Display;
 use std::ops::{Add, AddAssign, Sub};
