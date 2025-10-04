@@ -240,7 +240,7 @@ impl Settings {
         }
     }
 
-    fn get_active_box(&mut self) -> Option<&mut StringField> {
+    fn get_active_input_field(&mut self) -> Option<&mut StringField> {
         match self.active_box {
             SettingsActiveBox::NumPlayers => Some(&mut self.num_players),
             SettingsActiveBox::Language => Some(&mut self.language),
@@ -272,13 +272,23 @@ impl Settings {
     }
 
     fn on_key_press(&mut self, event: KeyEvent) {
-        match event.code {
-            KeyCode::Tab => self.select_next_box(),
-            KeyCode::Char(c) => self.get_active_box().unwrap().enter_char(c),
-            KeyCode::Backspace => self.get_active_box().unwrap().delete_char(),
-            KeyCode::Left => self.get_active_box().unwrap().move_cursor_left(),
-            KeyCode::Right => self.get_active_box().unwrap().move_cursor_right(),
-            _ => {}
+        if let KeyCode::Tab = event.code {
+            self.select_next_box()
+        }
+
+        match self.active_box {
+            SettingsActiveBox::NumPlayers | SettingsActiveBox::Language => {
+                let active_box = self.get_active_input_field().unwrap();
+
+                match event.code {
+                    KeyCode::Char(c) => active_box.enter_char(c),
+                    KeyCode::Backspace => active_box.delete_char(),
+                    KeyCode::Left => active_box.move_cursor_left(),
+                    KeyCode::Right => active_box.move_cursor_right(),
+                    _ => {}
+                }
+            }
+            SettingsActiveBox::Start => (),
         }
     }
 
