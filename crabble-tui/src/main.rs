@@ -25,10 +25,6 @@ fn main() -> Result<()> {
 struct App {
     /// Current state of the TUI app
     state: State,
-    /// Prompts for game settings
-    settings: Settings,
-    /// Current render of game state
-    game_state: Option<GameTurn>,
 }
 
 struct Settings {
@@ -43,14 +39,7 @@ struct Button {
     selected: bool,
 }
 
-struct GameTurn {
-    // struct that holds everything that needs to be rendered as part of the current game turn
-    // probably what we want here is some kind of textual representation of:
-    // - the board
-    // - current player's hand
-    // - current player's desired move, in ASN
-    // - some kind of submit button
-    game: Game,
+struct GameUI {
     active_box: GameTurnActiveBox,
     curr_board: StringField,
     curr_hand: StringField,
@@ -64,8 +53,19 @@ enum GameTurnActiveBox {
 }
 
 enum State {
-    Setup,
-    Gaming,
+    /// Prompts for game settings
+    Setup(Settings),
+    /// Current render of game state
+    Gaming(
+        // struct that holds everything that needs to be rendered as part of the current game turn
+        // probably what we want here is some kind of textual representation of:
+        // - the board
+        // - current player's hand
+        // - current player's desired move, in ASN
+        // - some kind of submit button
+        Game,
+        GameUI,
+    ),
 }
 
 enum SettingsActiveBox {
@@ -88,8 +88,8 @@ struct StringField {
     input: String,
 }
 
-impl GameTurn {
-    fn new(game: Game) -> Self {
+impl GameUI {
+    fn new(game: &Game) -> Self {
         let board = format!("{}", game.board());
 
         let curr_player = match game.state {
@@ -97,7 +97,7 @@ impl GameTurn {
             GameState::Turn(n, _is_last_round) => n,
         };
 
-        GameTurn {
+        GameUI {
             active_box: GameTurnActiveBox::Move,
             curr_board: {
                 let mut field =
@@ -116,7 +116,6 @@ impl GameTurn {
                 field
             },
             submit: Button::new("Submit Move".to_owned()),
-            game,
         }
     }
 
@@ -312,14 +311,33 @@ impl Settings {
             frame.set_cursor_position(cursor_pos);
         }
     }
+
+    fn start_game(&mut self) -> Result<(Game, GameUI), CrabbleError> {
+        let num_players = self
+            .num_players
+            .input
+            .parse::<u32>()
+            .map_err(|_| CrabbleError::InvalidNumberPlayers)?;
+        let language = Language::by_name(&self.language.input).map_err(|e| e)?;
+
+        let mut players = Vec::new();
+        for i in 0..num_players {
+            let player = Player::new(format!("player {}", i));
+            players.push(player);
+        }
+
+        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+
+        let game = Game::new(players, layout, language);
+        let ui = GameUI::new(&game);
+        Ok((game, ui))
+    }
 }
 
 impl App {
     fn new() -> Self {
         Self {
-            settings: Settings::new(),
-            state: State::Setup,
-            game_state: None,
+            state: State::Setup(Settings::new()),
         }
     }
 
@@ -331,24 +349,21 @@ impl App {
     }
 
     fn on_key_press(&mut self, event: KeyEvent) {
-        match self.state {
-            State::Setup => match event.code {
-                KeyCode::Enter => match self.settings.active_box {
-                    SettingsActiveBox::Start => match self.start_game() {
-                        Ok(_) => {}
-                        Err(e) => self
-                            .settings
+        match &mut self.state {
+            State::Setup(settings) => match event.code {
+                KeyCode::Enter => match settings.active_box {
+                    SettingsActiveBox::Start => match settings.start_game() {
+                        Ok((game, ui)) => self.state = State::Gaming(game, ui),
+                        Err(e) => settings
                             .start_button
                             .text
                             .push_str(&format!(" - {}", e.to_string())),
                     },
                     _ => {}
                 },
-                _ => self.settings.on_key_press(event),
+                _ => settings.on_key_press(event),
             },
-            State::Gaming => {
-                let game_turn = self.game_state.as_mut().unwrap();
-
+            State::Gaming(game, game_turn) => {
                 match event.code {
                     KeyCode::Enter => match game_turn.active_box {
                         GameTurnActiveBox::Move => {
@@ -359,10 +374,8 @@ impl App {
                         GameTurnActiveBox::Submit => {
                             let asn = ASN::from_str(&game_turn.curr_move.input).unwrap();
                             // `asn.run`` implicitly calls `end_turn`
-                            asn.run(&mut game_turn.game, false).unwrap();
-                            let g = self.game_state.take();
-                            let new_game_state = GameTurn::new(g.unwrap().game);
-                            self.game_state = Some(new_game_state);
+                            asn.run(game, false).unwrap();
+                            *game_turn = GameUI::new(game);
                         }
                     },
                     KeyCode::Tab => match game_turn.active_box {
@@ -387,29 +400,6 @@ impl App {
         }
     }
 
-    fn start_game(&mut self) -> Result<(), CrabbleError> {
-        let num_players = self
-            .settings
-            .num_players
-            .input
-            .parse::<u32>()
-            .map_err(|_| CrabbleError::InvalidNumberPlayers)?;
-        let language = Language::by_name(&self.settings.language.input).map_err(|e| e)?;
-
-        let mut players = Vec::new();
-        for i in 0..num_players {
-            let player = Player::new(format!("player {}", i));
-            players.push(player);
-        }
-
-        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
-
-        let game = Game::new(players, layout, language);
-        self.game_state = Some(GameTurn::new(game));
-        self.state = State::Gaming;
-        Ok(())
-    }
-
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         loop {
             terminal.draw(|frame| self.render(frame))?;
@@ -418,21 +408,23 @@ impl App {
     }
 
     fn render(&self, frame: &mut Frame) {
-        match self.state {
-            State::Setup => self.settings.render(frame),
-            State::Gaming => self.render_game_state(frame),
+        match &self.state {
+            State::Setup(settings) => settings.render(frame),
+            State::Gaming(_, _) => self.render_game_state(frame),
         }
     }
 
     fn render_game_state(&self, frame: &mut Frame) {
-        let game_turn = self.game_state.as_ref().unwrap();
+        let State::Gaming(_, game_ui) = &self.state else {
+            panic!("wrong state")
+        };
 
         let [cur_board, cur_hand, cur_move, button] =
             Layout::vertical(Constraint::from_lengths([17, 3, 3, 1])).areas(frame.area());
 
-        frame.render_widget(&game_turn.curr_board, cur_board);
-        frame.render_widget(&game_turn.curr_hand, cur_hand);
-        frame.render_widget(&game_turn.curr_move, cur_move);
-        frame.render_widget(&game_turn.submit, button);
+        frame.render_widget(&game_ui.curr_board, cur_board);
+        frame.render_widget(&game_ui.curr_hand, cur_hand);
+        frame.render_widget(&game_ui.curr_move, cur_move);
+        frame.render_widget(&game_ui.submit, button);
     }
 }
