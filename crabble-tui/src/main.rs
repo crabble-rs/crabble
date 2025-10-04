@@ -39,6 +39,17 @@ struct Button {
     selected: bool,
 }
 
+struct AppGamingState {
+    // struct that holds everything that needs to be rendered as part of the current game turn
+    // probably what we want here is some kind of textual representation of:
+    // - the board
+    // - current player's hand
+    // - current player's desired move, in ASN
+    // - some kind of submit button
+    game: Game,
+    ui: GameUI,
+}
+
 struct GameUI {
     active_box: GameTurnActiveBox,
     curr_board: StringField,
@@ -56,16 +67,7 @@ enum State {
     /// Prompts for game settings
     Setup(Settings),
     /// Current render of game state
-    Gaming(
-        // struct that holds everything that needs to be rendered as part of the current game turn
-        // probably what we want here is some kind of textual representation of:
-        // - the board
-        // - current player's hand
-        // - current player's desired move, in ASN
-        // - some kind of submit button
-        Game,
-        GameUI,
-    ),
+    Gaming(AppGamingState),
 }
 
 enum SettingsActiveBox {
@@ -270,25 +272,36 @@ impl Settings {
         }
     }
 
-    fn on_key_press(&mut self, event: KeyEvent) {
-        if let KeyCode::Tab = event.code {
-            self.select_next_box()
-        }
+    fn on_key_press(&mut self, event: KeyEvent) -> Option<State> {
+        match event.code {
+            KeyCode::Enter => match self.active_box {
+                SettingsActiveBox::Start => match self.start_game() {
+                    Ok((game, ui)) => return Some(State::Gaming(AppGamingState { game, ui })),
+                    Err(e) => self
+                        .start_button
+                        .text
+                        .push_str(&format!(" - {}", e.to_string())),
+                },
+                _ => (),
+            },
+            KeyCode::Tab => self.select_next_box(),
+            _ => match self.active_box {
+                SettingsActiveBox::NumPlayers | SettingsActiveBox::Language => {
+                    let active_box = self.get_active_input_field().unwrap();
 
-        match self.active_box {
-            SettingsActiveBox::NumPlayers | SettingsActiveBox::Language => {
-                let active_box = self.get_active_input_field().unwrap();
-
-                match event.code {
-                    KeyCode::Char(c) => active_box.enter_char(c),
-                    KeyCode::Backspace => active_box.delete_char(),
-                    KeyCode::Left => active_box.move_cursor_left(),
-                    KeyCode::Right => active_box.move_cursor_right(),
-                    _ => {}
+                    match event.code {
+                        KeyCode::Char(c) => active_box.enter_char(c),
+                        KeyCode::Backspace => active_box.delete_char(),
+                        KeyCode::Left => active_box.move_cursor_left(),
+                        KeyCode::Right => active_box.move_cursor_right(),
+                        _ => {}
+                    }
                 }
-            }
-            SettingsActiveBox::Start => (),
-        }
+                SettingsActiveBox::Start => (),
+            },
+        };
+
+        None
     }
 
     fn render(&self, frame: &mut Frame) {
@@ -334,6 +347,61 @@ impl Settings {
     }
 }
 
+impl AppGamingState {
+    fn on_key_press(&mut self, event: KeyEvent) {
+        let AppGamingState { game, ui } = self;
+
+        match event.code {
+            KeyCode::Enter => match ui.active_box {
+                GameTurnActiveBox::Move => {
+                    ui.active_box = GameTurnActiveBox::Submit;
+                    ui.curr_move.selected = false;
+                    ui.submit.selected = true;
+                }
+                GameTurnActiveBox::Submit => {
+                    let asn = ASN::from_str(&ui.curr_move.input).unwrap();
+                    // `asn.run`` implicitly calls `end_turn`
+                    asn.run(game, false).unwrap();
+                    *ui = GameUI::new(game);
+                }
+            },
+            KeyCode::Tab => match ui.active_box {
+                GameTurnActiveBox::Move => {
+                    ui.active_box = GameTurnActiveBox::Submit;
+                    ui.curr_move.selected = false;
+                    ui.submit.selected = true;
+                }
+                GameTurnActiveBox::Submit => {
+                    ui.active_box = GameTurnActiveBox::Move;
+                    ui.curr_move.selected = true;
+                    ui.submit.selected = false;
+                }
+            },
+            _ => match ui.active_box {
+                GameTurnActiveBox::Move => match event.code {
+                    KeyCode::Char(c) => ui.curr_move.enter_char(c),
+                    KeyCode::Backspace => ui.curr_move.delete_char(),
+                    KeyCode::Left => ui.curr_move.move_cursor_left(),
+                    KeyCode::Right => ui.curr_move.move_cursor_right(),
+                    _ => (),
+                },
+                GameTurnActiveBox::Submit => (),
+            },
+            _ => {}
+        }
+    }
+
+    fn render(&self, frame: &mut Frame) {
+        let [cur_board, cur_hand, cur_move, button] =
+            Layout::vertical(Constraint::from_lengths([17, 3, 3, 1])).areas(frame.area());
+
+        frame.render_widget(&self.ui.curr_board, cur_board);
+        frame.render_widget(&self.ui.curr_hand, cur_hand);
+        frame.render_widget(&self.ui.curr_move, cur_move);
+        frame.render_widget(&self.ui.submit, button);
+    }
+}
+
 impl App {
     fn new() -> Self {
         Self {
@@ -350,53 +418,11 @@ impl App {
 
     fn on_key_press(&mut self, event: KeyEvent) {
         match &mut self.state {
-            State::Setup(settings) => match event.code {
-                KeyCode::Enter => match settings.active_box {
-                    SettingsActiveBox::Start => match settings.start_game() {
-                        Ok((game, ui)) => self.state = State::Gaming(game, ui),
-                        Err(e) => settings
-                            .start_button
-                            .text
-                            .push_str(&format!(" - {}", e.to_string())),
-                    },
-                    _ => {}
-                },
-                _ => settings.on_key_press(event),
+            State::Setup(settings) => match settings.on_key_press(event) {
+                Some(state) => self.state = state,
+                None => (),
             },
-            State::Gaming(game, game_turn) => {
-                match event.code {
-                    KeyCode::Enter => match game_turn.active_box {
-                        GameTurnActiveBox::Move => {
-                            game_turn.active_box = GameTurnActiveBox::Submit;
-                            game_turn.curr_move.selected = false;
-                            game_turn.submit.selected = true;
-                        }
-                        GameTurnActiveBox::Submit => {
-                            let asn = ASN::from_str(&game_turn.curr_move.input).unwrap();
-                            // `asn.run`` implicitly calls `end_turn`
-                            asn.run(game, false).unwrap();
-                            *game_turn = GameUI::new(game);
-                        }
-                    },
-                    KeyCode::Tab => match game_turn.active_box {
-                        GameTurnActiveBox::Move => {
-                            game_turn.active_box = GameTurnActiveBox::Submit;
-                            game_turn.curr_move.selected = false;
-                            game_turn.submit.selected = true;
-                        }
-                        GameTurnActiveBox::Submit => {
-                            game_turn.active_box = GameTurnActiveBox::Move;
-                            game_turn.curr_move.selected = true;
-                            game_turn.submit.selected = false;
-                        }
-                    },
-                    KeyCode::Char(c) => game_turn.get_active_box().unwrap().enter_char(c),
-                    KeyCode::Backspace => game_turn.get_active_box().unwrap().delete_char(),
-                    KeyCode::Left => game_turn.get_active_box().unwrap().move_cursor_left(),
-                    KeyCode::Right => game_turn.get_active_box().unwrap().move_cursor_right(),
-                    _ => {}
-                };
-            }
+            State::Gaming(gaming) => gaming.on_key_press(event),
         }
     }
 
@@ -410,21 +436,7 @@ impl App {
     fn render(&self, frame: &mut Frame) {
         match &self.state {
             State::Setup(settings) => settings.render(frame),
-            State::Gaming(_, _) => self.render_game_state(frame),
+            State::Gaming(gaming) => gaming.render(frame),
         }
-    }
-
-    fn render_game_state(&self, frame: &mut Frame) {
-        let State::Gaming(_, game_ui) = &self.state else {
-            panic!("wrong state")
-        };
-
-        let [cur_board, cur_hand, cur_move, button] =
-            Layout::vertical(Constraint::from_lengths([17, 3, 3, 1])).areas(frame.area());
-
-        frame.render_widget(&game_ui.curr_board, cur_board);
-        frame.render_widget(&game_ui.curr_hand, cur_hand);
-        frame.render_widget(&game_ui.curr_move, cur_move);
-        frame.render_widget(&game_ui.submit, button);
     }
 }
