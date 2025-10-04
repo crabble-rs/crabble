@@ -1,5 +1,9 @@
 use std::path::PathBuf;
 
+use game::*;
+use language::Language;
+use logic::*;
+
 fn main() {
     let mut directories = vec![PathBuf::from("./asn_tests")];
 
@@ -24,8 +28,17 @@ fn main() {
 
                 println!("gaming!: {:?}", entry.path());
 
+                let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+
+                let players = vec![
+                    Player::new("Gamer 1".to_string()),
+                    Player::new("Player 2".to_string()),
+                ];
+
+                let mut game = Game::new(players, layout, Language::by_name("english").unwrap());
+
                 let asn = logic::asn::ASN::from_file(entry.path());
-                asn.run(true).unwrap();
+                asn.run(&mut game, true).unwrap();
             }
         }
     }

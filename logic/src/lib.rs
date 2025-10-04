@@ -5,6 +5,8 @@ mod bag;
 pub mod game;
 pub mod language;
 
+use thiserror::Error;
+
 use std::fmt::Display;
 use std::ops::{Add, AddAssign, Sub};
 use std::sync::LazyLock;
@@ -14,15 +16,25 @@ pub struct BoardLayout {
     squares: Vec<Vec<Square>>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Error, Debug, PartialEq)]
 pub enum CrabbleError {
+    #[error("Tile is already occupied")]
     TileOccupied,
+    #[error("Played word is empty, please play at least one letter")]
     PlayedWordEmpty,
+    #[error("Direction of play is invalid")]
     InvalidDirection,
+    #[error("Number of players must be between 2 and 4")]
+    InvalidNumberPlayers,
+    #[error("Plays must be adjacent, please place your tiles contiguosly")]
     ScatteredProvisionalTile,
+    #[error("Plays must be adjacent, please place your tiles contiguosly")]
     WordNotAdjacent,
+    #[error("Tile is out of bounds of the board")]
     TileOutOufBounds,
+    #[error("Bag is currently empty")]
     BagEmpty,
+    #[error("Language can be english or dutch")]
     InvalidLanguage,
 }
 
@@ -320,7 +332,7 @@ impl Coordinate {
 }
 
 #[derive(Clone, Copy, PartialEq, Debug)]
-struct BoardTile {
+pub struct BoardTile {
     tile: Tile,
     is_provisional: bool,
 }
@@ -332,7 +344,7 @@ pub struct Tile {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-enum HandTile {
+pub enum HandTile {
     Joker,
     Letter(char),
 }
@@ -349,7 +361,7 @@ impl Display for HandTile {
 }
 
 #[derive(Debug)]
-struct Hand {
+pub struct Hand {
     letters: Vec<HandTile>,
 }
 
@@ -371,6 +383,10 @@ impl Hand {
         Hand {
             letters: Vec::new(),
         }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.letters.is_empty()
     }
 }
 
@@ -447,6 +463,8 @@ mod test {
     use std::str::FromStr;
 
     use asn::ASN;
+    use game::*;
+    use language::Language;
 
     use super::*;
 
@@ -457,29 +475,44 @@ mod test {
         assert_eq!(s, include_str!("../../data/scrabble_layout.txt"),);
     }
 
+    fn make_game() -> Game {
+        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
+
+        let players = vec![
+            Player::new("Gamer 1".to_string()),
+            Player::new("Player 2".to_string()),
+        ];
+
+        Game::new(players, layout, Language::by_name("english").unwrap())
+    }
+
     #[test]
     fn asn_test_word_extension() {
+        let mut game = make_game();
         let a = ASN::from_str("77hcat\na7hs").unwrap();
-        a.run(true).unwrap();
+        a.run(&mut game, true).unwrap();
     }
 
     #[test]
     fn asn_invalid_play() {
+        let mut game = make_game();
         let a = ASN::from_str("77hcat\ne8hs").unwrap();
-        let err = a.run(false).unwrap_err();
+        let err = a.run(&mut game, false).unwrap_err();
         assert_eq!(err, CrabbleError::WordNotAdjacent);
     }
 
     #[test]
     fn asn_invalid_play_overlap() {
+        let mut game = make_game();
         let a = ASN::from_str("77hcat\n97hmeow").unwrap();
-        let err = a.run(false).unwrap_err();
+        let err = a.run(&mut game, false).unwrap_err();
         assert_eq!(err, CrabbleError::TileOccupied);
     }
 
     #[test]
     fn asn_catgirl_extension() {
+        let mut game = make_game();
         let a = ASN::from_str("77hgirl\n47hcats").unwrap();
-        a.run(true).unwrap();
+        a.run(&mut game, true).unwrap();
     }
 }

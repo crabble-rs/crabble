@@ -1,8 +1,6 @@
 use std::{io::Read, path::PathBuf, str::FromStr};
 
-use crate::language::Language;
-
-use crate::game::{Game, Player};
+use crate::game::Game;
 
 use crate::{Coordinate, CrabbleError, Direction, Tile};
 
@@ -21,18 +19,7 @@ impl ASN {
         ASN::from_str(&s).unwrap()
     }
 
-    pub fn run(self, print_board: bool) -> Result<Game, CrabbleError> {
-        use super::*;
-
-        let layout = BoardLayout::from_fn((15, 15), standard_board_layout);
-
-        let players = vec![
-            Player::new("Gamer 1".to_string()),
-            Player::new("Player 2".to_string()),
-        ];
-
-        let mut game = Game::new(players, layout, Language::by_name("english")?);
-
+    pub fn run(self, game: &mut Game, print_board: bool) -> Result<(), CrabbleError> {
         for line in self.lines {
             let mut coord = line.coord;
 
@@ -49,7 +36,7 @@ impl ASN {
             game.end_turn()?;
         }
 
-        Ok(game)
+        Ok(())
     }
 }
 

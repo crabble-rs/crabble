@@ -1,6 +1,3 @@
-//! gamers
-
-use core::panic;
 use std::fmt::Display;
 
 use crate::{
@@ -12,7 +9,7 @@ use crate::{
 pub struct Player {
     name: String,
     score: isize,
-    hand: Hand,
+    pub hand: Hand,
 }
 
 impl Player {
@@ -28,14 +25,14 @@ impl Player {
 #[derive(Debug)]
 pub enum GameState {
     /// Turn of a player referenced by index
-    Turn(usize),
+    Turn(usize, bool),
     Done,
 }
 
 impl Display for GameState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            GameState::Turn(n) => write!(f, "Turn {n}"),
+            GameState::Turn(n, _is_last_round) => write!(f, "Turn {n}"),
             GameState::Done => write!(f, "Done"),
         }
     }
@@ -58,8 +55,8 @@ impl Player {
 pub struct Game {
     board: Board,
     bag: Bag,
-    players: Vec<Player>,
-    state: GameState,
+    pub players: Vec<Player>,
+    pub state: GameState,
     language: Language,
 }
 
@@ -83,6 +80,7 @@ impl Game {
         assert!(players.len() <= 4);
 
         let mut bag = Bag::full(&language.distribution);
+        bag.shuffle();
 
         for player in &mut players {
             player.draw_from_bag(&mut bag).unwrap();
@@ -92,7 +90,7 @@ impl Game {
         Self {
             board: Board::from(board_layout),
             bag,
-            state: GameState::Turn(0),
+            state: GameState::Turn(0, false),
             language,
             players,
         }
@@ -104,6 +102,20 @@ impl Game {
 
     pub fn get_tile(&self, coord: Coordinate) -> Option<BoardTile> {
         self.board.get_tile(coord)
+    }
+
+    pub fn display_current_player_hand(&self) -> String {
+        let mut res = String::new();
+
+        if let GameState::Turn(t, _is_last_round) = self.state {
+            let current_player_hand = &self.players.get(t).unwrap().hand;
+            for letter in &current_player_hand.letters {
+                let score = self.language.values.get(*letter);
+                let tile = format!("({}, {}) ", letter.to_string(), score);
+                res.push_str(&tile);
+            }
+        }
+        res
     }
 
     pub fn place_tile(&mut self, tile: Tile, coord: Coordinate) -> Result<(), CrabbleError> {
@@ -128,10 +140,6 @@ impl Game {
     }
 
     pub fn end_turn(&mut self) -> Result<(), CrabbleError> {
-        // TODO: Refactor this function
-        // - Things which only concern the board should be lowered into functions on Board
-        // - Draw new tiles for the player
-
         let mut tile_iter = self
             .board
             .tiles_with_coordinates()
@@ -234,12 +242,31 @@ impl Game {
         let score = self.score_word(self.board.find_range(first_coord, dir), dir);
 
         match self.state {
-            GameState::Turn(n) => {
+            GameState::Turn(n, is_last_round) => {
                 let player_id = n % self.players.len();
-                self.players.get_mut(player_id).unwrap().score += score;
-                self.state = GameState::Turn(n + 1);
+                let current_player = self.players.get_mut(player_id).unwrap();
+                current_player.score += score;
+
+                let _ = current_player.draw_from_bag(&mut self.bag);
+
+                if self.bag.is_empty() && current_player.hand.is_empty() {
+                    // starting final round
+                    self.state = GameState::Turn(n + 1, true);
+                } else {
+                    self.state = GameState::Turn(n + 1, is_last_round);
+                }
+
+                match self.state {
+                    GameState::Turn(player, is_last_round) => {
+                        if is_last_round && self.players.get(player).unwrap().hand.is_empty() {
+                            self.state = GameState::Done;
+                            return Ok(());
+                        }
+                    }
+                    GameState::Done => return Ok(()),
+                }
             }
-            GameState::Done => panic!(),
+            GameState::Done => return Ok(()),
         }
 
         for coord in self.board.find_range(first_coord, dir) {
@@ -254,11 +281,8 @@ impl Game {
         Ok(())
     }
 
-    fn end_game() {
-        // TODO: last round functionality
-    }
-
     fn score_word(&self, word: impl Iterator<Item = Coordinate>, dir: Direction) -> isize {
+        // TODO: count scrabbles
         let other_dir = dir.flip();
         let mut total = 0;
 
@@ -316,10 +340,21 @@ mod tests {
     use crate::asn::ASN;
     use std::str::FromStr;
 
+    use crate::game::*;
+
     #[test]
     fn scoring_test_1() {
+        let layout = BoardLayout::from_fn((15, 15), crate::standard_board_layout);
+
+        let players = vec![
+            Player::new("Gamer 1".to_string()),
+            Player::new("Player 2".to_string()),
+        ];
+
+        let mut game = Game::new(players, layout, Language::by_name("english").unwrap());
+
         let a = ASN::from_str("77hcat\na7hs").unwrap();
-        let game = a.run(true).unwrap();
+        a.run(&mut game, true).unwrap();
 
         let scores: Vec<_> = game.players.iter().map(|p| p.score).collect();
         assert_eq!(scores, [10, 6])

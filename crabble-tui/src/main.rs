@@ -1,17 +1,16 @@
-use core::num;
+use std::str::FromStr;
 
-// TODO: get rid of UB lol ???
-use logic::game::{self, Game, Player};
+use logic::asn::ASN;
+use logic::game::{Game, GameState, Player};
 use logic::language::Language;
 
-use color_eyre::Result;
-use crossterm::event::{self, KeyCode, KeyEvent, KeyEventKind};
-use logic::{BoardLayout, standard_board_layout};
+use color_eyre::{Result, eyre};
+use crossterm::event::{self, KeyCode, KeyEvent};
+use logic::{BoardLayout, CrabbleError, standard_board_layout};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
-use ratatui::style::{Color, Modifier, Style, Stylize};
-use ratatui::text::{Line, Span, Text};
-use ratatui::widgets::{Block, List, ListItem, Paragraph, Widget};
+use ratatui::style::{Color, Style};
+use ratatui::widgets::{Block, Paragraph, Widget};
 use ratatui::{DefaultTerminal, Frame};
 
 fn main() -> Result<()> {
@@ -36,7 +35,7 @@ struct Settings {
     num_players: StringField,
     language: StringField,
     start_button: Button,
-    active_box: ActiveBox,
+    active_box: SettingsActiveBox,
 }
 
 struct Button {
@@ -64,17 +63,12 @@ enum GameTurnActiveBox {
     Submit,
 }
 
-enum InputMode {
-    Normal,
-    Editing,
-}
-
 enum State {
     Setup,
     Gaming,
 }
 
-enum ActiveBox {
+enum SettingsActiveBox {
     NumPlayers,
     Language,
     Start,
@@ -86,8 +80,6 @@ enum ActiveBox {
 struct StringField {
     // whether this field is currently in focus
     selected: bool,
-    // whether this field is at all editable (TODO: actually implement this)
-    editable: bool,
     /// Label above the field
     label: String,
     /// Position of cursor in the editor area.
@@ -100,21 +92,38 @@ impl GameTurn {
     fn new(game: Game) -> Self {
         let board = format!("{}", game.board());
 
+        let curr_player = match game.state {
+            GameState::Done => todo!(),
+            GameState::Turn(n, _is_last_round) => n,
+        };
+
         GameTurn {
-            game,
             active_box: GameTurnActiveBox::Move,
             curr_board: {
-                let mut field = StringField::new("Current Board".to_owned());
+                let mut field =
+                    StringField::new(format!("Current Board - Player {}'s turn", curr_player + 1));
                 field.input = board;
                 field
             },
-            curr_hand: StringField::new("Current Player's hand".to_owned()),
+            curr_hand: {
+                let mut field = StringField::new("Current Player's hand".to_owned());
+                field.input = game.display_current_player_hand();
+                field
+            },
             curr_move: {
                 let mut field = StringField::new("Move".to_owned());
                 field.selected = true;
                 field
             },
             submit: Button::new("Submit Move".to_owned()),
+            game,
+        }
+    }
+
+    fn get_active_box(&mut self) -> Option<&mut StringField> {
+        match self.active_box {
+            GameTurnActiveBox::Move => Some(&mut self.curr_move),
+            GameTurnActiveBox::Submit => None,
         }
     }
 }
@@ -123,15 +132,10 @@ impl StringField {
     fn new(label: String) -> Self {
         StringField {
             selected: false,
-            editable: false,
             label,
             character_index: 0,
             input: String::new(),
         }
-    }
-
-    fn make_editable(&mut self) {
-        self.editable = true
     }
 
     fn move_cursor_left(&mut self) {
@@ -191,12 +195,6 @@ impl StringField {
     const fn reset_cursor(&mut self) {
         self.character_index = 0;
     }
-
-    fn submit_message(&mut self) {
-        // somehow save this particular setting
-        self.input.clear();
-        self.reset_cursor();
-    }
 }
 
 impl Widget for &Button {
@@ -238,34 +236,34 @@ impl Settings {
             num_players: StringField::new("How many players are there?".to_owned()),
             language: StringField::new("What language would you like to play in?".to_owned()),
             start_button: Button::new("Start Game!".to_owned()),
-            active_box: ActiveBox::NumPlayers,
+            active_box: SettingsActiveBox::NumPlayers,
         }
     }
 
     fn get_active_box(&mut self) -> Option<&mut StringField> {
         match self.active_box {
-            ActiveBox::NumPlayers => Some(&mut self.num_players),
-            ActiveBox::Language => Some(&mut self.language),
-            ActiveBox::Start => None,
+            SettingsActiveBox::NumPlayers => Some(&mut self.num_players),
+            SettingsActiveBox::Language => Some(&mut self.language),
+            SettingsActiveBox::Start => None,
         }
     }
 
     fn select_next_box(&mut self) {
         match self.active_box {
-            ActiveBox::NumPlayers => {
-                self.active_box = ActiveBox::Language;
+            SettingsActiveBox::NumPlayers => {
+                self.active_box = SettingsActiveBox::Language;
                 self.num_players.selected = false;
                 self.language.selected = true;
                 self.start_button.selected = false;
             }
-            ActiveBox::Language => {
-                self.active_box = ActiveBox::Start;
+            SettingsActiveBox::Language => {
+                self.active_box = SettingsActiveBox::Start;
                 self.num_players.selected = false;
                 self.language.selected = false;
                 self.start_button.selected = true;
             }
-            ActiveBox::Start => {
-                self.active_box = ActiveBox::NumPlayers;
+            SettingsActiveBox::Start => {
+                self.active_box = SettingsActiveBox::NumPlayers;
                 self.num_players.selected = true;
                 self.language.selected = false;
                 self.start_button.selected = false;
@@ -277,7 +275,6 @@ impl Settings {
         match event.code {
             KeyCode::Tab => self.select_next_box(),
             KeyCode::Char(c) => self.get_active_box().unwrap().enter_char(c),
-
             KeyCode::Backspace => self.get_active_box().unwrap().delete_char(),
             KeyCode::Left => self.get_active_box().unwrap().move_cursor_left(),
             KeyCode::Right => self.get_active_box().unwrap().move_cursor_right(),
@@ -295,9 +292,9 @@ impl Settings {
         frame.render_widget(&self.start_button, start_area);
 
         let (active_area, active_offset) = match self.active_box {
-            ActiveBox::Language => (language_area, self.language.character_index),
-            ActiveBox::NumPlayers => (num_players_area, self.num_players.character_index),
-            ActiveBox::Start => (start_area, 0),
+            SettingsActiveBox::Language => (language_area, self.language.character_index),
+            SettingsActiveBox::NumPlayers => (num_players_area, self.num_players.character_index),
+            SettingsActiveBox::Start => (start_area, 0),
         };
         if active_area != start_area {
             let cursor_pos =
@@ -327,15 +324,21 @@ impl App {
         match self.state {
             State::Setup => match event.code {
                 KeyCode::Enter => match self.settings.active_box {
-                    ActiveBox::Language | ActiveBox::NumPlayers => {
-                        self.settings.get_active_box().unwrap().submit_message()
-                    }
-                    ActiveBox::Start => self.start_game(),
+                    SettingsActiveBox::Start => match self.start_game() {
+                        Ok(_) => {}
+                        Err(e) => self
+                            .settings
+                            .start_button
+                            .text
+                            .push_str(&format!(" - {}", e.to_string())),
+                    },
+                    _ => {}
                 },
                 _ => self.settings.on_key_press(event),
             },
             State::Gaming => {
                 let game_turn = self.game_state.as_mut().unwrap();
+
                 match event.code {
                     KeyCode::Enter => match game_turn.active_box {
                         GameTurnActiveBox::Move => {
@@ -343,7 +346,14 @@ impl App {
                             game_turn.curr_move.selected = false;
                             game_turn.submit.selected = true;
                         }
-                        GameTurnActiveBox::Submit => todo!(),
+                        GameTurnActiveBox::Submit => {
+                            let asn = ASN::from_str(&game_turn.curr_move.input).unwrap();
+                            // `asn.run`` implicitly calls `end_turn`
+                            asn.run(&mut game_turn.game, false).unwrap();
+                            let g = self.game_state.take();
+                            let new_game_state = GameTurn::new(g.unwrap().game);
+                            self.game_state = Some(new_game_state);
+                        }
                     },
                     KeyCode::Tab => match game_turn.active_box {
                         GameTurnActiveBox::Move => {
@@ -357,20 +367,24 @@ impl App {
                             game_turn.submit.selected = false;
                         }
                     },
-                    _ => (),
+                    KeyCode::Char(c) => game_turn.get_active_box().unwrap().enter_char(c),
+                    KeyCode::Backspace => game_turn.get_active_box().unwrap().delete_char(),
+                    KeyCode::Left => game_turn.get_active_box().unwrap().move_cursor_left(),
+                    KeyCode::Right => game_turn.get_active_box().unwrap().move_cursor_right(),
+                    _ => {}
                 };
             }
         }
     }
 
-    fn start_game(&mut self) {
+    fn start_game(&mut self) -> Result<(), CrabbleError> {
         let num_players = self
             .settings
             .num_players
             .input
             .parse::<u32>()
-            .expect("invalid number of players");
-        let language = Language::by_name(&self.settings.language.input).expect("invalid language");
+            .map_err(|_| CrabbleError::InvalidNumberPlayers)?;
+        let language = Language::by_name(&self.settings.language.input).map_err(|e| e)?;
 
         let mut players = Vec::new();
         for i in 0..num_players {
@@ -383,6 +397,7 @@ impl App {
         let game = Game::new(players, layout, language);
         self.game_state = Some(GameTurn::new(game));
         self.state = State::Gaming;
+        Ok(())
     }
 
     fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
