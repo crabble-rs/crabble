@@ -180,7 +180,7 @@ pub struct Board {
     // the actual squares on the board
     layout: BoardLayout,
     // the played letters
-    tiles: Vec<Vec<Option<BoardTile>>>,
+    pub tiles: Vec<Vec<Option<BoardTile>>>,
     provisionary_tiles_count: usize,
 }
 
@@ -412,10 +412,19 @@ impl Direction {
         }
     }
 
-    fn flip(self) -> Direction {
+    pub fn flip(self) -> Direction {
         match self {
             Self::Horizontal => Self::Vertical,
             Self::Vertical => Self::Horizontal,
+        }
+    }
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Direction::Horizontal => write!(f, "h"),
+            Direction::Vertical => write!(f, "v"),
         }
     }
 }

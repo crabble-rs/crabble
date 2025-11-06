@@ -1,16 +1,17 @@
 use std::str::FromStr;
 
+use color_eyre::owo_colors::OwoColorize;
 use logic::asn::ASN;
-use logic::game::{Game, GameState, Player};
+use logic::game::{self, Game, GameState, Player};
 use logic::language::Language;
 
 use color_eyre::{Result, eyre};
 use crossterm::event::{self, KeyCode, KeyEvent};
-use logic::{BoardLayout, CrabbleError, standard_board_layout};
+use logic::{Board, BoardLayout, CrabbleError, Direction, standard_board_layout};
 use ratatui::buffer::Buffer;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Style};
-use ratatui::widgets::{Block, Paragraph, Widget};
+use ratatui::widgets::{Block, List, Paragraph, Row, Table, TableState, Widget};
 use ratatui::{DefaultTerminal, Frame};
 
 fn main() -> Result<()> {
@@ -52,13 +53,16 @@ struct GameTurn {
     // - some kind of submit button
     game: Game,
     active_box: GameTurnActiveBox,
-    curr_board: StringField,
+    curr_direction: Direction,
+    curr_selected: TableState,
+    curr_board: Board,
     curr_hand: StringField,
     curr_move: StringField,
     submit: Button,
 }
 
 enum GameTurnActiveBox {
+    Board,
     Move,
     Submit,
 }
@@ -90,8 +94,7 @@ struct StringField {
 
 impl GameTurn {
     fn new(game: Game) -> Self {
-        let board = format!("{}", game.board());
-
+        // let board = format!("{}", game.board());
         let curr_player = match game.state {
             GameState::Done => todo!(),
             GameState::Turn(n, _is_last_round) => n,
@@ -99,12 +102,7 @@ impl GameTurn {
 
         GameTurn {
             active_box: GameTurnActiveBox::Move,
-            curr_board: {
-                let mut field =
-                    StringField::new(format!("Current Board - Player {}'s turn", curr_player + 1));
-                field.input = board;
-                field
-            },
+            curr_board: game.board().clone(),
             curr_hand: {
                 let mut field = StringField::new("Current Player's hand".to_owned());
                 field.input = game.display_current_player_hand();
@@ -117,6 +115,8 @@ impl GameTurn {
             },
             submit: Button::new("Submit Move".to_owned()),
             game,
+            curr_selected: TableState::default().with_selected_cell(Some((0, 1))),
+            curr_direction: Direction::Horizontal,
         }
     }
 
@@ -124,6 +124,7 @@ impl GameTurn {
         match self.active_box {
             GameTurnActiveBox::Move => Some(&mut self.curr_move),
             GameTurnActiveBox::Submit => None,
+            _ => None,
         }
     }
 }
@@ -341,13 +342,19 @@ impl App {
 
                 match event.code {
                     KeyCode::Enter => match game_turn.active_box {
+                        GameTurnActiveBox::Board => {}
                         GameTurnActiveBox::Move => {
                             game_turn.active_box = GameTurnActiveBox::Submit;
                             game_turn.curr_move.selected = false;
                             game_turn.submit.selected = true;
                         }
                         GameTurnActiveBox::Submit => {
-                            let asn = ASN::from_str(&game_turn.curr_move.input).unwrap();
+                            let position = &game_turn.curr_selected.selected_cell().unwrap();
+                            let dir = game_turn.curr_direction.to_string();
+                            let mov = &game_turn.curr_move.input;
+
+                            let asn_str = format!("{}{}{}{}", position.0, position.1 - 1, dir, mov);
+                            let asn = ASN::from_str(&asn_str).unwrap();
                             // `asn.run`` implicitly calls `end_turn`
                             asn.run(&mut game_turn.game, false).unwrap();
                             let g = self.game_state.take();
@@ -356,21 +363,61 @@ impl App {
                         }
                     },
                     KeyCode::Tab => match game_turn.active_box {
+                        GameTurnActiveBox::Board => {
+                            game_turn.active_box = GameTurnActiveBox::Move;
+                            game_turn.curr_move.selected = true;
+                            game_turn.submit.selected = false;
+                        }
                         GameTurnActiveBox::Move => {
                             game_turn.active_box = GameTurnActiveBox::Submit;
                             game_turn.curr_move.selected = false;
                             game_turn.submit.selected = true;
                         }
                         GameTurnActiveBox::Submit => {
-                            game_turn.active_box = GameTurnActiveBox::Move;
-                            game_turn.curr_move.selected = true;
+                            game_turn.active_box = GameTurnActiveBox::Board;
+                            game_turn.curr_move.selected = false;
                             game_turn.submit.selected = false;
                         }
                     },
-                    KeyCode::Char(c) => game_turn.get_active_box().unwrap().enter_char(c),
-                    KeyCode::Backspace => game_turn.get_active_box().unwrap().delete_char(),
-                    KeyCode::Left => game_turn.get_active_box().unwrap().move_cursor_left(),
-                    KeyCode::Right => game_turn.get_active_box().unwrap().move_cursor_right(),
+                    KeyCode::Char('v') => match game_turn.active_box {
+                        GameTurnActiveBox::Move => {
+                            game_turn.get_active_box().unwrap().enter_char('v')
+                        }
+                        GameTurnActiveBox::Submit => {}
+                        GameTurnActiveBox::Board => {
+                            game_turn.curr_direction = game_turn.curr_direction.flip()
+                        }
+                    },
+                    KeyCode::Char(c) => match game_turn.active_box {
+                        GameTurnActiveBox::Move => {
+                            game_turn.get_active_box().unwrap().enter_char(c)
+                        }
+                        _ => {}
+                    },
+                    KeyCode::Backspace => match game_turn.active_box {
+                        GameTurnActiveBox::Move => {
+                            game_turn.get_active_box().unwrap().delete_char();
+                        }
+                        _ => {}
+                    },
+                    KeyCode::Left => match game_turn.active_box {
+                        GameTurnActiveBox::Move => game_turn.curr_move.move_cursor_left(),
+                        GameTurnActiveBox::Submit => {}
+                        GameTurnActiveBox::Board => game_turn.curr_selected.scroll_left_by(1),
+                    },
+                    KeyCode::Right => match game_turn.active_box {
+                        GameTurnActiveBox::Move => game_turn.curr_move.move_cursor_right(),
+                        GameTurnActiveBox::Submit => {}
+                        GameTurnActiveBox::Board => game_turn.curr_selected.scroll_right_by(1),
+                    },
+                    KeyCode::Up => match game_turn.active_box {
+                        GameTurnActiveBox::Board => game_turn.curr_selected.scroll_up_by(1),
+                        _ => {}
+                    },
+                    KeyCode::Down => match game_turn.active_box {
+                        GameTurnActiveBox::Board => game_turn.curr_selected.scroll_down_by(1),
+                        _ => {}
+                    },
                     _ => {}
                 };
             }
@@ -407,20 +454,41 @@ impl App {
         }
     }
 
-    fn render(&self, frame: &mut Frame) {
+    fn render(&mut self, frame: &mut Frame) {
         match self.state {
             State::Setup => self.settings.render(frame),
             State::Gaming => self.render_game_state(frame),
         }
     }
 
-    fn render_game_state(&self, frame: &mut Frame) {
-        let game_turn = self.game_state.as_ref().unwrap();
+    fn render_game_state(&mut self, frame: &mut Frame) {
+        let game_turn = self.game_state.as_mut().unwrap();
 
         let [cur_board, cur_hand, cur_move, button] =
             Layout::vertical(Constraint::from_lengths([17, 3, 3, 1])).areas(frame.area());
 
-        frame.render_widget(&game_turn.curr_board, cur_board);
+        // frame.render_widget(&game_turn.curr_board, cur_board);
+
+        let board = game_turn.curr_board.to_string();
+        let rows: Vec<_> = board
+            .split("\n")
+            .map(|row| Row::new(row.split("").collect::<Vec<&str>>()))
+            .collect();
+        let widths = [Constraint::Length(1); 16];
+
+        let board_table = Table::new(rows, widths)
+            .column_spacing(1)
+            .style(Style::default().fg(Color::Yellow))
+            .cell_highlight_style(Style::default().fg(Color::Cyan))
+            .block(Block::new().title("Current Board: "));
+
+        let board_table = match game_turn.curr_direction {
+            Direction::Horizontal => board_table.highlight_symbol(">>"),
+            Direction::Vertical => board_table.highlight_symbol("v"),
+        };
+
+        frame.render_stateful_widget(board_table, cur_board, &mut game_turn.curr_selected);
+
         frame.render_widget(&game_turn.curr_hand, cur_hand);
         frame.render_widget(&game_turn.curr_move, cur_move);
         frame.render_widget(&game_turn.submit, button);
